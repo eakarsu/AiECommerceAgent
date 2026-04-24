@@ -1,0 +1,81 @@
+# Terminal 1: Backend
+  cd /Users/erolakarsu/projects/AiECommerceAgent/backend
+  npm run seed   # Reseed to get shipping data
+  npm run dev
+
+  # Terminal 2: Frontend
+  cd /Users/erolakarsu/projects/AiECommerceAgent/frontend
+  npm run dev
+
+  Open http://localhost:5173 (or the port Vite shows)
+
+  Login: admin@ecommerce.ai / admin123
+
+  ---
+  2. Test Each Feature in UI
+  ┌──────────────────┬──────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────┐
+  │     Feature      │        Where to Test         │                                    What to Do                                     │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Search           │ Products page                │ Type in the search bar at top, see suggestions dropdown, press Enter for results  │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Variants         │ Products → Click any product │ Scroll down in modal to "Variants" section, click "+ Add Variant"                 │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Shipping         │ /checkout page               │ Enter state/ZIP, click "Calculate Shipping", see Standard/Express/Overnight rates │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Inventory Alerts │ Sidebar → "Stock Alerts"     │ View alerts, click Acknowledge/Resolve buttons                                    │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Alert Widget     │ Dashboard                    │ Red alert box appears if there are active alerts                                  │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Recommendations  │ Recommendations page         │ Click "Recalculate" button to regenerate from order history                       │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Checkout         │ Navigate to /checkout        │ Go through 4 steps: Cart → Address → Shipping → Payment                           │
+  ├──────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+  │ Refund           │ Orders → Click an order      │ If order has Stripe payment, see "Refund" button                                  │
+  └──────────────────┴──────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────┘
+  ---
+  3. Step-by-Step Testing
+
+  Test Search:
+  1. Go to Products in sidebar
+  2. Type "wireless" or "smart" in the search bar
+  3. See dropdown suggestions appear
+  4. Press Enter or click Search
+  5. Results show matching products
+
+  Test Variants:
+  1. Go to Products
+  2. Click any product row
+  3. In the modal, scroll to Variants section
+  4. Click + Add Variant
+  5. Fill in: SKU, Name, Size (e.g., "L"), Color (e.g., "Red"), Quantity
+  6. Click Create
+
+  Test Inventory Alerts:
+  1. Click Stock Alerts in sidebar
+  2. Click Check All Inventory button
+  3. Any low/out-of-stock items create alerts
+  4. Click Acknowledge or Resolve on alerts
+
+  Test Checkout Flow:
+  1. Go to URL: http://localhost:5173/checkout
+  2. Step 1: Review cart → Continue
+  3. Step 2: Enter address (Street, City, State like "NY", ZIP) → Continue
+  4. Step 3: Enter state/ZIP, click Calculate Shipping, select a method → Proceed to Payment
+  5. Step 4: Enter test card 4242 4242 4242 4242, any future date, any CVC → Pay
+
+  Note: Stripe payment requires valid test keys in .env. Without them, you'll see a "Stripe not configured" message.
+
+  Test Recommendation Recalculate:
+  1. Go to Recommendations in sidebar
+  2. Click Recalculate button
+  3. New recommendations generated from order co-occurrence data
+
+  ---
+  4. Quick Navigation URLs
+
+  http://localhost:5173/products          # Search + Variants
+  http://localhost:5173/inventory-alerts  # Stock Alerts
+  http://localhost:5173/recommendations   # Recalculate button
+  http://localhost:5173/checkout          # Full checkout flow
+  http://localhost:5173/dashboard         # Alert widget (if alerts exist)
+  http://localhost:5173/orders            # Refund button (on paid orders)

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { Layout } from './components/Layout';
 import { ToastContainer } from './components/NotificationCenter';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Products } from './pages/Products';
@@ -28,9 +29,12 @@ import { AuditLog } from './pages/AuditLog';
 import { Reports } from './pages/Reports';
 import { Users } from './pages/Users';
 import { Notifications } from './pages/Notifications';
+import { FraudDetector } from './pages/FraudDetector';
+import { CartAbandonment } from './pages/CartAbandonment';
+import { Profile } from './pages/Profile';
 
-const ProtectedRoute = ({ children }) => {
-  const { token, loading } = useAuth();
+const ProtectedRoute = ({ children, requiredRole }) => {
+  const { token, user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -44,6 +48,15 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
+  if (requiredRole) {
+    const hierarchy = { admin: 3, manager: 2, user: 1 };
+    const userLevel = hierarchy[user?.role] || 0;
+    const requiredLevel = hierarchy[requiredRole] || 0;
+    if (userLevel < requiredLevel) {
+      return <Navigate to="/dashboard" replace />;
+    }
+  }
+
   return <Layout>{children}</Layout>;
 };
 
@@ -52,34 +65,39 @@ function App() {
     <AuthProvider>
       <NotificationProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
-            <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
-            <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
-            <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-            <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
-            <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
-            <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
-            <Route path="/content" element={<ProtectedRoute><Content /></ProtectedRoute>} />
-            <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
-            <Route path="/competitors" element={<ProtectedRoute><Competitors /></ProtectedRoute>} />
-            <Route path="/ab-tests" element={<ProtectedRoute><ABTests /></ProtectedRoute>} />
-            <Route path="/forecasts" element={<ProtectedRoute><Forecasts /></ProtectedRoute>} />
-            <Route path="/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
-            <Route path="/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
-            <Route path="/inventory-alerts" element={<ProtectedRoute><InventoryAlerts /></ProtectedRoute>} />
-            <Route path="/payment-methods" element={<ProtectedRoute><PaymentMethods /></ProtectedRoute>} />
-            <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
-            <Route path="/checkout/success" element={<ProtectedRoute><CheckoutSuccess /></ProtectedRoute>} />
-            <Route path="/coupons" element={<ProtectedRoute><Coupons /></ProtectedRoute>} />
-            <Route path="/audit-log" element={<ProtectedRoute><AuditLog /></ProtectedRoute>} />
-            <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-            <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-            <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
+              <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
+              <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
+              <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+              <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+              <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
+              <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
+              <Route path="/content" element={<ProtectedRoute><Content /></ProtectedRoute>} />
+              <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
+              <Route path="/competitors" element={<ProtectedRoute><Competitors /></ProtectedRoute>} />
+              <Route path="/ab-tests" element={<ProtectedRoute><ABTests /></ProtectedRoute>} />
+              <Route path="/forecasts" element={<ProtectedRoute><Forecasts /></ProtectedRoute>} />
+              <Route path="/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
+              <Route path="/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
+              <Route path="/inventory-alerts" element={<ProtectedRoute><InventoryAlerts /></ProtectedRoute>} />
+              <Route path="/payment-methods" element={<ProtectedRoute><PaymentMethods /></ProtectedRoute>} />
+              <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+              <Route path="/checkout/success" element={<ProtectedRoute><CheckoutSuccess /></ProtectedRoute>} />
+              <Route path="/coupons" element={<ProtectedRoute><Coupons /></ProtectedRoute>} />
+              <Route path="/audit-log" element={<ProtectedRoute><AuditLog /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+              <Route path="/users" element={<ProtectedRoute requiredRole="admin"><Users /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+              <Route path="/fraud-detector" element={<ProtectedRoute><FraudDetector /></ProtectedRoute>} />
+              <Route path="/cart-abandonment" element={<ProtectedRoute><CartAbandonment /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            </Routes>
+          </ErrorBoundary>
           <ToastContainer />
         </BrowserRouter>
       </NotificationProvider>

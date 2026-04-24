@@ -152,3 +152,16 @@ body {
 .btn-warning {
   @apply bg-yellow-500 text-white hover:bg-yellow-600;
 }
+
+/* Responsive modal fixes */
+@media (max-width: 640px) {
+  .modal-content {
+    @apply mx-2 max-h-[95vh];
+  }
+  .stat-card {
+    @apply p-4;
+  }
+  .grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

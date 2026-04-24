@@ -17,11 +17,18 @@ class OpenRouterService {
     this.baseUrl = OPENROUTER_BASE_URL;
   }
 
+  // Strip markdown code block wrappers (```json, ```text, etc.) from AI responses
+  stripCodeBlocks(text) {
+    if (typeof text !== 'string') return text;
+    // Remove ```lang\n...\n``` wrappers
+    return text.replace(/^```[\w]*\n?/gm, '').replace(/\n?```$/gm, '').trim();
+  }
+
   async chat(messages, options = {}) {
     const {
       model = OPENROUTER_MODEL,
       temperature = 0.7,
-      maxTokens = 1024
+      maxTokens = 10000
     } = options;
 
     if (!this.apiKey || this.apiKey === 'your-openrouter-api-key-here') {
@@ -51,7 +58,7 @@ class OpenRouterService {
       }
 
       const data = await response.json();
-      return data.choices[0].message.content;
+      return this.stripCodeBlocks(data.choices[0].message.content);
     } catch (error) {
       console.error('OpenRouter API error:', error);
       return this.getMockResponse(messages);
@@ -276,6 +283,88 @@ class OpenRouterService {
         content: `Analyze market trend: ${trend.trendName} in ${trend.category}. Growth rate: ${trend.growthRate}%. Competition: ${trend.competitionLevel}. Provide strategic recommendations for capitalizing on this trend.`
       }
     ];
+    return await this.chat(messages);
+  }
+
+  // Analyze fraud alert
+  async analyzeFraudAlert(alert) {
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert fraud analyst specializing in e-commerce transaction security. Analyze potential fraud cases and provide actionable recommendations.'
+      },
+      {
+        role: 'user',
+        content: `Analyze this potential fraud alert:
+          Alert Type: ${alert.alertType}
+          Risk Score: ${alert.riskScore}/100
+          Order Amount: $${alert.orderAmount}
+          Customer Email: ${alert.customerEmail}
+          IP Address: ${alert.ipAddress}
+          Risk Indicators: ${alert.indicators?.join(', ') || 'None specified'}
+          Shipping Address: ${JSON.stringify(alert.shippingAddress)}
+          Billing Address: ${JSON.stringify(alert.billingAddress)}
+
+          Provide a detailed analysis and recommendation in JSON format with fields: analysis (detailed explanation), recommendation (action to take), confidenceScore (0-100), suggestedActions (array of specific steps).`
+      }
+    ];
+
+    if (!this.apiKey || this.apiKey === 'your-openrouter-api-key-here') {
+      return JSON.stringify({
+        analysis: `This ${alert.alertType} alert shows ${alert.riskScore >= 70 ? 'significant' : 'moderate'} fraud indicators. The transaction amount of $${alert.orderAmount} combined with ${alert.indicators?.length || 0} risk indicators warrants ${alert.riskScore >= 80 ? 'immediate investigation' : 'careful review'}. ${alert.shippingAddress?.city !== alert.billingAddress?.city ? 'Address mismatch between shipping and billing detected.' : 'Addresses appear consistent.'}`,
+        recommendation: alert.riskScore >= 80 ? 'Block transaction and contact customer for verification' : alert.riskScore >= 50 ? 'Hold order for manual review before processing' : 'Monitor transaction but allow to proceed',
+        confidenceScore: Math.min(95, alert.riskScore + 10),
+        suggestedActions: [
+          'Verify customer identity through secondary authentication',
+          'Check order history for similar patterns',
+          alert.riskScore >= 70 ? 'Contact customer via phone to verify order' : 'Send verification email to customer',
+          'Document findings for future reference'
+        ]
+      });
+    }
+
+    return await this.chat(messages);
+  }
+
+  // Generate cart recovery strategy
+  async generateCartRecoveryStrategy(cart) {
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert e-commerce recovery specialist. Create personalized cart recovery strategies that convert abandoned carts into purchases.'
+      },
+      {
+        role: 'user',
+        content: `Generate a recovery strategy for this abandoned cart:
+          Customer Name: ${cart.customerName}
+          Customer Email: ${cart.customerEmail}
+          Cart Value: $${cart.cartTotal}
+          Items: ${JSON.stringify(cart.cartItems)}
+          Abandoned: ${cart.abandonedAt}
+          Device: ${cart.deviceType || 'Unknown'}
+          Exit Page: ${cart.exitPage || 'Checkout'}
+          Recovery Stage: ${cart.recoveryStage}
+          Emails Already Sent: ${cart.recoveryEmailsSent || 0}
+
+          Provide a recovery strategy in JSON format with fields: personalizedMessage (email body text), subject (email subject line), recommendedDiscount (percentage 0-25), strategy (brief explanation), urgencyLevel (low/medium/high), bestTimeToSend (time of day).`
+      }
+    ];
+
+    if (!this.apiKey || this.apiKey === 'your-openrouter-api-key-here') {
+      const itemNames = cart.cartItems?.map(i => i.name).join(', ') || 'items';
+      const discount = cart.cartTotal > 200 ? 15 : cart.cartTotal > 100 ? 10 : 5;
+      const urgency = cart.recoveryEmailsSent >= 2 ? 'high' : cart.recoveryEmailsSent === 1 ? 'medium' : 'low';
+
+      return JSON.stringify({
+        personalizedMessage: `Hi ${cart.customerName || 'there'},\n\nWe noticed you left some great items in your cart! Your ${itemNames} ${cart.cartItems?.length > 1 ? 'are' : 'is'} waiting for you.\n\n${discount > 0 ? `As a special offer, use code COMEBACK${discount} for ${discount}% off your order!` : ''}\n\nComplete your purchase today and enjoy fast shipping.\n\nBest regards,\nThe Team`,
+        subject: cart.recoveryEmailsSent === 0 ? `Don't forget your ${itemNames}!` : cart.recoveryEmailsSent === 1 ? `Your cart misses you, ${cart.customerName || 'friend'}!` : `Last chance: ${discount}% off your cart!`,
+        recommendedDiscount: discount,
+        strategy: `${urgency === 'high' ? 'Final attempt with maximum discount incentive' : urgency === 'medium' ? 'Follow-up with moderate discount offer' : 'Initial gentle reminder without heavy discounting'} targeting cart value of $${cart.cartTotal}.`,
+        urgencyLevel: urgency,
+        bestTimeToSend: '10:00 AM'
+      });
+    }
+
     return await this.chat(messages);
   }
 }

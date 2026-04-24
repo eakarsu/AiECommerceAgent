@@ -3,6 +3,7 @@ import { orderConfirmationTemplate } from '../templates/email/orderConfirmation.
 import { shippingUpdateTemplate } from '../templates/email/shippingUpdate.js';
 import { lowStockAlertTemplate } from '../templates/email/lowStockAlert.js';
 import { reviewResponseTemplate } from '../templates/email/reviewResponse.js';
+import { cartRecoveryEmailTemplate } from '../templates/email/cartRecoveryEmail.js';
 
 class EmailService {
   constructor() {
@@ -83,6 +84,14 @@ class EmailService {
       `Response to your review of ${product.name}`,
       html
     );
+  }
+
+  async sendCartRecoveryEmail(cart, customerEmail) {
+    const html = cartRecoveryEmailTemplate(cart);
+    const subject = cart.discountCodeOffered
+      ? `${cart.discountAmount}% off your cart - Complete your purchase!`
+      : `Don't forget your cart, ${cart.customerName || 'friend'}!`;
+    return this.sendEmail(customerEmail, subject, html);
   }
 }
 

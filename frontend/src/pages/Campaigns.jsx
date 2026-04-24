@@ -1,41 +1,56 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import { LiveSearch } from '../components/LiveSearch';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 
 export const Campaigns = () => {
-  const [campaigns, setCampaigns] = useState([]);
-  const [filteredCampaigns, setFilteredCampaigns] = useState([]);
+  const {
+    data: campaigns, total, page, setPage, filters, handleFilterChange, clearFilters,
+    loading: pLoading, totalPages, limit, reload
+  } = usePaginatedApi('/api/campaigns', { defaultLimit: 10 });
+
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [newCampaign, setNewCampaign] = useState({
-    name: '', platform: 'google', budget: '', targetAudience: '', status: 'draft'
-  });
+  const [newCampaign, setNewCampaign] = useState({ name: '', platform: 'google', budget: '', targetAudience: '', status: 'draft' });
   const [aiInsight, setAiInsight] = useState(null);
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const { get, post, del, loading } = useApi();
+  const { showToast } = useNotifications();
 
-  useEffect(() => { loadCampaigns(); }, []);
+  const advancedSearchFilters = [
+    { key: 'platform', label: 'Platform', type: 'select', options: [
+      { value: 'google', label: 'Google' }, { value: 'facebook', label: 'Facebook' },
+      { value: 'instagram', label: 'Instagram' }, { value: 'tiktok', label: 'TikTok' }, { value: 'amazon', label: 'Amazon' }
+    ]},
+    { key: 'status', label: 'Status', type: 'select', options: [
+      { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' },
+      { value: 'completed', label: 'Completed' }, { value: 'draft', label: 'Draft' }
+    ]},
+    { key: 'startDate', label: 'Start Date', type: 'date' },
+    { key: 'endDate', label: 'End Date', type: 'date' }
+  ];
 
-  const loadCampaigns = async () => {
-    try {
-      const data = await get('/api/campaigns');
-      setCampaigns(data);
-      setFilteredCampaigns(data);
-      if (data.length > 0) generateAiSummary(data);
-    }
-    catch (error) { console.error('Error:', error); }
-  };
+  useEffect(() => {
+    if (campaigns && campaigns.length > 0) generateAiSummary(campaigns);
+  }, [campaigns]);
 
   const generateAiSummary = async (data) => {
     try {
       const result = await post('/api/ai/analyze', {
         type: 'campaigns_summary',
         data: {
-          totalCampaigns: data.length,
+          totalCampaigns: total || data.length,
           activeCampaigns: data.filter(c => c.status === 'active').length,
           totalSpent: data.reduce((sum, c) => sum + parseFloat(c.spent || 0), 0),
           totalBudget: data.reduce((sum, c) => sum + parseFloat(c.budget || 0), 0),
@@ -58,16 +73,9 @@ export const Campaigns = () => {
       const result = await post('/api/ai/analyze', {
         type: 'campaign_analysis',
         data: {
-          name: campaign.name,
-          platform: campaign.platform,
-          budget: campaign.budget,
-          spent: campaign.spent,
-          impressions: campaign.impressions,
-          clicks: campaign.clicks,
-          conversions: campaign.conversions,
-          ctr: campaign.ctr,
-          roas: campaign.roas,
-          status: campaign.status
+          name: campaign.name, platform: campaign.platform, budget: campaign.budget, spent: campaign.spent,
+          impressions: campaign.impressions, clicks: campaign.clicks, conversions: campaign.conversions,
+          ctr: campaign.ctr, roas: campaign.roas, status: campaign.status
         }
       });
       setAiInsight(result.insight || result);
@@ -77,23 +85,32 @@ export const Campaigns = () => {
     setAiLoading(false);
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this campaign?')) return;
-    try {
-      await del(`/api/campaigns/${selectedCampaign.id}`);
-      setIsModalOpen(false);
-      loadCampaigns();
-    } catch (error) {
-      console.error('Error deleting campaign:', error);
-    }
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this campaign?');
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/campaigns/${selectedCampaign.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Campaign deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting campaign:', error);
+        showToast('Failed to delete campaign', 'error');
+      }
+    });
+    setConfirmOpen(true);
   };
 
   const handleAiGenerate = async () => {
     try {
       const result = await post(`/api/campaigns/${selectedCampaign.id}/ai-generate-copy`, {});
       setSelectedCampaign(result.campaign);
-      loadCampaigns();
-    } catch (error) { console.error('Error:', error); }
+      reload();
+      showToast('AI ad copy generated', 'success');
+    } catch (error) {
+      console.error('Error:', error);
+      showToast('Failed to generate ad copy', 'error');
+    }
   };
 
   const handleCreateCampaign = async (e) => {
@@ -102,8 +119,12 @@ export const Campaigns = () => {
       await post('/api/campaigns', { ...newCampaign, budget: parseFloat(newCampaign.budget) });
       setIsNewModalOpen(false);
       setNewCampaign({ name: '', platform: 'google', budget: '', targetAudience: '', status: 'draft' });
-      loadCampaigns();
-    } catch (error) { console.error('Error:', error); }
+      reload();
+      showToast('Campaign created successfully', 'success');
+    } catch (error) {
+      console.error('Error:', error);
+      showToast('Failed to create campaign', 'error');
+    }
   };
 
   const platformColors = { google: 'bg-red-100 text-red-800', facebook: 'bg-blue-100 text-blue-800', instagram: 'bg-pink-100 text-pink-800', tiktok: 'bg-gray-900 text-white', amazon: 'bg-orange-100 text-orange-800' };
@@ -112,37 +133,26 @@ export const Campaigns = () => {
     { header: 'Campaign', render: (row) => (
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center text-lg">📢</div>
-        <div>
-          <span className="font-medium block">{row.name}</span>
-          {row.aiGenerated && <span className="ai-badge text-xs">✨ AI</span>}
-        </div>
+        <div><span className="font-medium block">{row.name}</span>{row.aiGenerated && <span className="ai-badge text-xs">✨ AI</span>}</div>
       </div>
     )},
     { header: 'Platform', render: (row) => <span className={`badge ${platformColors[row.platform]}`}>{row.platform}</span> },
     { header: 'Budget', render: (row) => `$${parseFloat(row.budget).toLocaleString()}` },
     { header: 'Spent', render: (row) => `$${parseFloat(row.spent).toLocaleString()}` },
     { header: 'Performance', render: (row) => (
-      <div className="text-sm">
-        <div>{row.impressions?.toLocaleString()} imp</div>
-        <div className="text-gray-500">{row.clicks?.toLocaleString()} clicks</div>
-      </div>
+      <div className="text-sm"><div>{row.impressions?.toLocaleString()} imp</div><div className="text-gray-500">{row.clicks?.toLocaleString()} clicks</div></div>
     )},
     { header: 'CTR', render: (row) => <span className={row.ctr > 3 ? 'text-green-600 font-medium' : ''}>{parseFloat(row.ctr || 0).toFixed(2)}%</span> },
     { header: 'ROAS', render: (row) => <span className={row.roas > 4 ? 'text-green-600 font-bold' : ''}>{parseFloat(row.roas || 0).toFixed(1)}x</span> },
     { header: 'Status', render: (row) => (
-      <span className={`badge ${row.status === 'active' ? 'badge-success' : row.status === 'paused' ? 'badge-warning' : row.status === 'completed' ? 'badge-info' : 'badge-gray'}`}>
-        {row.status}
-      </span>
+      <span className={`badge ${row.status === 'active' ? 'badge-success' : row.status === 'paused' ? 'badge-warning' : row.status === 'completed' ? 'badge-info' : 'badge-gray'}`}>{row.status}</span>
     )}
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Ad Campaigns</h1>
-          <p className="text-gray-500">Manage your advertising campaigns</p>
-        </div>
+        <div><h1 className="text-2xl font-bold text-gray-900">Ad Campaigns</h1><p className="text-gray-500">Manage your advertising campaigns</p></div>
         <button onClick={() => setIsNewModalOpen(true)} className="btn btn-primary">+ New Campaign</button>
       </div>
 
@@ -163,21 +173,17 @@ export const Campaigns = () => {
       </div>
 
       <div className="card space-y-4">
-        <LiveSearch
-          data={campaigns}
-          onFilter={setFilteredCampaigns}
-          searchFields={['name', 'platform', 'status', 'targetAudience']}
-          placeholder="Search by name, platform, status..."
-        />
-        <DataTable columns={columns} data={filteredCampaigns} onRowClick={handleRowClick} loading={loading} />
+        <AdvancedSearch filters={advancedSearchFilters} values={filters} onChange={handleFilterChange} onClear={clearFilters} />
+        <LiveSearch data={campaigns} onFilter={() => {}} searchFields={['name', 'platform', 'status', 'targetAudience']} placeholder="Search by name, platform, status..." onServerSearch={(q) => handleFilterChange('search', q)} />
+        <DataTable columns={columns} data={campaigns} onRowClick={handleRowClick} loading={pLoading} emptyIcon="📢" emptyTitle="No campaigns found" emptyDescription="Create a new campaign to get started." />
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="campaigns" />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Campaign Details" size="lg">
         {selectedCampaign && (
           <div className="space-y-6">
             <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-xl font-bold">{selectedCampaign.name}</h3>
+              <div><h3 className="text-xl font-bold">{selectedCampaign.name}</h3>
                 <div className="flex gap-2 mt-2">
                   <span className={`badge ${platformColors[selectedCampaign.platform]}`}>{selectedCampaign.platform}</span>
                   <span className={`badge ${selectedCampaign.status === 'active' ? 'badge-success' : 'badge-gray'}`}>{selectedCampaign.status}</span>
@@ -207,7 +213,7 @@ export const Campaigns = () => {
             <div className="flex gap-3">
               <button onClick={handleAiGenerate} className="btn btn-ai">✨ AI Generate Ad Copy</button>
               <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button>
-              <button onClick={handleDelete} className="btn btn-danger">🗑️ Delete</button>
+              <button onClick={handleDelete} className="btn btn-danger">Delete</button>
             </div>
           </div>
         )}
@@ -228,6 +234,8 @@ export const Campaigns = () => {
           <div className="flex gap-3 pt-4"><button type="submit" className="btn btn-primary">Create Campaign</button><button type="button" onClick={() => setIsNewModalOpen(false)} className="btn btn-secondary">Cancel</button></div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Delete" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

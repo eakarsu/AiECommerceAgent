@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApi } from '../hooks/useApi';
+import { useNotifications } from '../context/NotificationContext';
 
 export const Reports = () => {
   const [exportFilters, setExportFilters] = useState({
@@ -10,18 +11,22 @@ export const Reports = () => {
   });
   const [exporting, setExporting] = useState({});
   const { loading } = useApi();
+  const { showToast } = useNotifications();
 
-  const handleExport = async (type) => {
-    setExporting(prev => ({ ...prev, [type]: true }));
+  const handleExport = async (type, format = 'csv') => {
+    const key = `${type}-${format}`;
+    setExporting(prev => ({ ...prev, [key]: true }));
     try {
-      const filters = exportFilters[type];
+      const filterKey = type === 'inventory-alerts' ? 'alerts' : type;
+      const filters = exportFilters[filterKey];
       const params = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, value);
+      Object.entries(filters).forEach(([k, value]) => {
+        if (value) params.append(k, value);
       });
 
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/export/${type}?${params}`, {
+      const endpoint = format === 'pdf' ? `/api/export/${type}/pdf` : `/api/export/${type}`;
+      const response = await fetch(`${endpoint}?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -31,16 +36,17 @@ export const Reports = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${type}-${Date.now()}.csv`;
+      a.download = `${type}-${Date.now()}.${format}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      showToast(`${format.toUpperCase()} export downloaded successfully`, 'success');
     } catch (e) {
       console.error(e);
-      alert('Export failed');
+      showToast(`Failed to export ${format.toUpperCase()}`, 'error');
     } finally {
-      setExporting(prev => ({ ...prev, [type]: false }));
+      setExporting(prev => ({ ...prev, [key]: false }));
     }
   };
 
@@ -53,22 +59,9 @@ export const Reports = () => {
       color: 'bg-blue-50 border-blue-200',
       iconBg: 'bg-blue-100',
       filters: [
-        {
-          key: 'startDate',
-          label: 'From Date',
-          type: 'date'
-        },
-        {
-          key: 'endDate',
-          label: 'To Date',
-          type: 'date'
-        },
-        {
-          key: 'status',
-          label: 'Status',
-          type: 'select',
-          options: ['', 'pending', 'processing', 'shipped', 'delivered', 'cancelled']
-        }
+        { key: 'startDate', label: 'From Date', type: 'date' },
+        { key: 'endDate', label: 'To Date', type: 'date' },
+        { key: 'status', label: 'Status', type: 'select', options: ['', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'] }
       ]
     },
     {
@@ -79,18 +72,8 @@ export const Reports = () => {
       color: 'bg-green-50 border-green-200',
       iconBg: 'bg-green-100',
       filters: [
-        {
-          key: 'category',
-          label: 'Category',
-          type: 'select',
-          options: ['', 'Electronics', 'Clothing', 'Home', 'Sports', 'Beauty']
-        },
-        {
-          key: 'status',
-          label: 'Status',
-          type: 'select',
-          options: ['', 'active', 'inactive', 'discontinued']
-        }
+        { key: 'category', label: 'Category', type: 'select', options: ['', 'Electronics', 'Clothing', 'Home', 'Sports', 'Beauty'] },
+        { key: 'status', label: 'Status', type: 'select', options: ['', 'active', 'inactive', 'discontinued'] }
       ]
     },
     {
@@ -101,18 +84,8 @@ export const Reports = () => {
       color: 'bg-purple-50 border-purple-200',
       iconBg: 'bg-purple-100',
       filters: [
-        {
-          key: 'segment',
-          label: 'Segment',
-          type: 'select',
-          options: ['', 'new', 'regular', 'vip', 'at_risk', 'churned']
-        },
-        {
-          key: 'status',
-          label: 'Status',
-          type: 'select',
-          options: ['', 'active', 'inactive']
-        }
+        { key: 'segment', label: 'Segment', type: 'select', options: ['', 'new', 'regular', 'vip', 'at_risk', 'churned'] },
+        { key: 'status', label: 'Status', type: 'select', options: ['', 'active', 'inactive'] }
       ]
     },
     {
@@ -123,27 +96,19 @@ export const Reports = () => {
       color: 'bg-yellow-50 border-yellow-200',
       iconBg: 'bg-yellow-100',
       filters: [
-        {
-          key: 'status',
-          label: 'Status',
-          type: 'select',
-          options: ['', 'active', 'acknowledged', 'resolved']
-        },
-        {
-          key: 'type',
-          label: 'Alert Type',
-          type: 'select',
-          options: ['', 'low_stock', 'out_of_stock', 'overstock', 'reorder_needed']
-        }
+        { key: 'status', label: 'Status', type: 'select', options: ['', 'active', 'acknowledged', 'resolved'] },
+        { key: 'type', label: 'Alert Type', type: 'select', options: ['', 'low_stock', 'out_of_stock', 'overstock', 'reorder_needed'] }
       ]
     }
   ];
+
+  const getFilterKey = (cardType) => cardType === 'inventory-alerts' ? 'alerts' : cardType;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Reports & Export</h1>
-        <p className="text-gray-500">Generate and download CSV reports for your data</p>
+        <p className="text-gray-500">Generate and download CSV or PDF reports for your data</p>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
@@ -164,11 +129,11 @@ export const Reports = () => {
                       {filter.type === 'date' ? (
                         <input
                           type="date"
-                          value={exportFilters[card.type === 'inventory-alerts' ? 'alerts' : card.type][filter.key]}
+                          value={exportFilters[getFilterKey(card.type)][filter.key]}
                           onChange={(e) => setExportFilters(prev => ({
                             ...prev,
-                            [card.type === 'inventory-alerts' ? 'alerts' : card.type]: {
-                              ...prev[card.type === 'inventory-alerts' ? 'alerts' : card.type],
+                            [getFilterKey(card.type)]: {
+                              ...prev[getFilterKey(card.type)],
                               [filter.key]: e.target.value
                             }
                           }))}
@@ -176,11 +141,11 @@ export const Reports = () => {
                         />
                       ) : (
                         <select
-                          value={exportFilters[card.type === 'inventory-alerts' ? 'alerts' : card.type][filter.key]}
+                          value={exportFilters[getFilterKey(card.type)][filter.key]}
                           onChange={(e) => setExportFilters(prev => ({
                             ...prev,
-                            [card.type === 'inventory-alerts' ? 'alerts' : card.type]: {
-                              ...prev[card.type === 'inventory-alerts' ? 'alerts' : card.type],
+                            [getFilterKey(card.type)]: {
+                              ...prev[getFilterKey(card.type)],
                               [filter.key]: e.target.value
                             }
                           }))}
@@ -197,34 +162,54 @@ export const Reports = () => {
                   ))}
                 </div>
 
-                <button
-                  onClick={() => handleExport(card.type)}
-                  disabled={exporting[card.type]}
-                  className="btn btn-primary mt-4 w-full"
-                >
-                  {exporting[card.type] ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="animate-spin">⏳</span> Exporting...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      📥 Download CSV
-                    </span>
-                  )}
-                </button>
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => handleExport(card.type, 'csv')}
+                    disabled={exporting[`${card.type}-csv`]}
+                    className="btn btn-primary flex-1"
+                  >
+                    {exporting[`${card.type}-csv`] ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="animate-spin">⏳</span> Exporting...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        📥 Download CSV
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleExport(card.type, 'pdf')}
+                    disabled={exporting[`${card.type}-pdf`]}
+                    className="btn btn-secondary flex-1"
+                  >
+                    {exporting[`${card.type}-pdf`] ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="animate-spin">⏳</span> Exporting...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        📄 Download PDF
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Quick Stats Info */}
       <div className="bg-gray-50 rounded-lg p-6 border">
         <h3 className="text-lg font-semibold mb-3">Export Tips</h3>
         <ul className="space-y-2 text-sm text-gray-600">
           <li className="flex items-center gap-2">
             <span className="text-green-500">✓</span>
             CSV files can be opened in Excel, Google Sheets, or any spreadsheet application
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="text-green-500">✓</span>
+            PDF reports include formatted tables and are ready for printing or sharing
           </li>
           <li className="flex items-center gap-2">
             <span className="text-green-500">✓</span>

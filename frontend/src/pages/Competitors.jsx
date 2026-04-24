@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export const Competitors = () => {
   const [competitors, setCompetitors] = useState([]);
@@ -12,7 +14,11 @@ export const Competitors = () => {
   const [aiInsight, setAiInsight] = useState(null);
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const { get, post, del, loading } = useApi();
+  const { showToast } = useNotifications();
 
   useEffect(() => { loadCompetitors(); }, []);
   const loadCompetitors = async () => {
@@ -28,8 +34,7 @@ export const Competitors = () => {
       const result = await post('/api/ai/analyze', {
         type: 'competitors_summary',
         data: {
-          totalCompetitors: data.length,
-          activeThreats: data.filter(c => c.status === 'active').length,
+          totalCompetitors: data.length, activeThreats: data.filter(c => c.status === 'active').length,
           avgStrength: Math.round(data.reduce((sum, c) => sum + (c.strengthScore || 0), 0) / data.length),
           totalMarketShare: data.reduce((sum, c) => sum + parseFloat(c.marketShare || 0), 0),
           categories: [...new Set(data.map(c => c.category))]
@@ -49,17 +54,7 @@ export const Competitors = () => {
     try {
       const result = await post('/api/ai/analyze', {
         type: 'competitor_analysis',
-        data: {
-          name: c.name,
-          category: c.category,
-          marketShare: c.marketShare,
-          strengthScore: c.strengthScore,
-          priceRange: c.priceRange,
-          products: c.products,
-          avgRating: c.avgRating,
-          strengths: c.strengths,
-          weaknesses: c.weaknesses
-        }
+        data: { name: c.name, category: c.category, marketShare: c.marketShare, strengthScore: c.strengthScore, priceRange: c.priceRange, products: c.products, avgRating: c.avgRating, strengths: c.strengths, weaknesses: c.weaknesses }
       });
       setAiInsight(result.insight || result);
     } catch (e) {
@@ -67,33 +62,35 @@ export const Competitors = () => {
     }
     setAiLoading(false);
   };
+
   const handleAiAnalyze = async () => {
     setAiLoading(true);
     try {
       const result = await post('/api/ai/analyze', {
         type: 'competitor_deep_analysis',
-        data: {
-          name: selectedCompetitor.name,
-          category: selectedCompetitor.category,
-          website: selectedCompetitor.website,
-          marketShare: selectedCompetitor.marketShare,
-          strengthScore: selectedCompetitor.strengthScore,
-          priceRange: selectedCompetitor.priceRange,
-          products: selectedCompetitor.products,
-          avgRating: selectedCompetitor.avgRating,
-          strengths: selectedCompetitor.strengths,
-          weaknesses: selectedCompetitor.weaknesses,
-          requestType: 'Provide detailed competitive analysis with strategic recommendations to outperform this competitor'
-        }
+        data: { name: selectedCompetitor.name, category: selectedCompetitor.category, website: selectedCompetitor.website, marketShare: selectedCompetitor.marketShare, strengthScore: selectedCompetitor.strengthScore, priceRange: selectedCompetitor.priceRange, products: selectedCompetitor.products, avgRating: selectedCompetitor.avgRating, strengths: selectedCompetitor.strengths, weaknesses: selectedCompetitor.weaknesses, requestType: 'Provide detailed competitive analysis with strategic recommendations to outperform this competitor' }
       });
       setAiInsight(result.insight || result);
     } catch (e) {
-      setAiInsight('Deep analysis: Study their pricing strategy, identify gaps in their product offerings, and develop unique value propositions to differentiate your brand.');
+      setAiInsight('Deep analysis: Study their pricing strategy, identify gaps in their product offerings, and develop unique value propositions.');
     }
     setAiLoading(false);
   };
-  const handleDelete = async () => { if (!window.confirm('Are you sure you want to delete this competitor?')) return; try { await del(`/api/competitors/${selectedCompetitor.id}`); setIsModalOpen(false); loadCompetitors(); } catch (e) { console.error(e); } };
-  const handleCreate = async (e) => { e.preventDefault(); try { await post('/api/competitors', newCompetitor); setIsNewModalOpen(false); setNewCompetitor({ name: '', website: '', category: '', priceRange: 'Mid-range' }); loadCompetitors(); } catch (e) { console.error(e); } };
+
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this competitor?');
+    setConfirmAction(() => async () => {
+      try { await del(`/api/competitors/${selectedCompetitor.id}`); setIsModalOpen(false); loadCompetitors(); showToast('Competitor deleted', 'success'); }
+      catch (e) { console.error(e); showToast('Failed to delete competitor', 'error'); }
+    });
+    setConfirmOpen(true);
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try { await post('/api/competitors', newCompetitor); setIsNewModalOpen(false); setNewCompetitor({ name: '', website: '', category: '', priceRange: 'Mid-range' }); loadCompetitors(); showToast('Competitor added', 'success'); }
+    catch (e) { console.error(e); showToast('Failed to add competitor', 'error'); }
+  };
 
   const columns = [
     { header: 'Competitor', render: (row) => (
@@ -124,10 +121,7 @@ export const Competitors = () => {
 
       {aiSummary && (
         <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">✨</span>
-            <div><h3 className="font-medium text-red-900 mb-1">AI Competitive Insights</h3><p className="text-red-800 text-sm">{aiSummary}</p></div>
-          </div>
+          <div className="flex items-start gap-3"><span className="text-2xl">✨</span><div><h3 className="font-medium text-red-900 mb-1">AI Competitive Insights</h3><p className="text-red-800 text-sm">{aiSummary}</p></div></div>
         </div>
       )}
 
@@ -138,7 +132,7 @@ export const Competitors = () => {
         <div className="stat-card"><p className="text-sm text-gray-500">Total Market Share</p><p className="text-2xl font-bold">{competitors.reduce((sum, c) => sum + parseFloat(c.marketShare || 0), 0).toFixed(1)}%</p></div>
       </div>
 
-      <div className="card"><DataTable columns={columns} data={competitors} onRowClick={handleRowClick} loading={loading} /></div>
+      <div className="card"><DataTable columns={columns} data={competitors} onRowClick={handleRowClick} loading={loading} emptyIcon="🏢" emptyTitle="No competitors found" emptyDescription="Add a competitor to start tracking." /></div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Competitor Details" size="lg">
         {selectedCompetitor && (
@@ -158,13 +152,10 @@ export const Competitors = () => {
               {selectedCompetitor.weaknesses?.length > 0 && <div><h4 className="font-medium mb-2 text-green-600">Weaknesses (Opportunities)</h4><div className="flex gap-2 flex-wrap">{selectedCompetitor.weaknesses.map((w, i) => <span key={i} className="badge badge-success">{w}</span>)}</div></div>}
             </div>
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium text-purple-900">✨ AI Analysis</h4>
-                <button onClick={() => handleRowClick(selectedCompetitor)} disabled={aiLoading} className="text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50">🔄 Regenerate</button>
-              </div>
+              <div className="flex items-center justify-between mb-2"><h4 className="font-medium text-purple-900">✨ AI Analysis</h4><button onClick={() => handleRowClick(selectedCompetitor)} disabled={aiLoading} className="text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50">🔄 Regenerate</button></div>
               {aiLoading ? <p className="text-purple-600">Analyzing competitor...</p> : <p className="text-purple-800">{aiInsight || 'Generating...'}</p>}
             </div>
-            <div className="flex gap-3"><button onClick={handleAiAnalyze} className="btn btn-ai">✨ Deep AI Analysis</button><button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button><button onClick={handleDelete} className="btn btn-danger">🗑️ Delete</button></div>
+            <div className="flex gap-3"><button onClick={handleAiAnalyze} className="btn btn-ai">✨ Deep AI Analysis</button><button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button><button onClick={handleDelete} className="btn btn-danger">Delete</button></div>
           </div>
         )}
       </Modal>
@@ -180,6 +171,8 @@ export const Competitors = () => {
           <div className="flex gap-3 pt-4"><button type="submit" className="btn btn-primary">Add Competitor</button><button type="button" onClick={() => setIsNewModalOpen(false)} className="btn btn-secondary">Cancel</button></div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Delete" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

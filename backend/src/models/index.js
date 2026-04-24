@@ -391,6 +391,65 @@ ProductVariant.belongsTo(Product, { foreignKey: 'productId' });
 Product.hasMany(InventoryAlert, { foreignKey: 'productId' });
 InventoryAlert.belongsTo(Product, { foreignKey: 'productId' });
 
+// FraudAlert Model
+const FraudAlert = sequelize.define('FraudAlert', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  orderId: { type: DataTypes.INTEGER },
+  customerId: { type: DataTypes.INTEGER },
+  transactionId: { type: DataTypes.STRING },
+  alertType: { type: DataTypes.ENUM('suspicious_order', 'velocity_check', 'address_mismatch', 'card_testing', 'account_takeover', 'refund_abuse'), allowNull: false },
+  riskScore: { type: DataTypes.INTEGER, defaultValue: 0 }, // 0-100
+  riskLevel: { type: DataTypes.ENUM('low', 'medium', 'high', 'critical'), defaultValue: 'low' },
+  indicators: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [] },
+  orderAmount: { type: DataTypes.DECIMAL(10, 2) },
+  customerEmail: { type: DataTypes.STRING },
+  ipAddress: { type: DataTypes.STRING },
+  shippingAddress: { type: DataTypes.JSONB },
+  billingAddress: { type: DataTypes.JSONB },
+  aiAnalysis: { type: DataTypes.TEXT },
+  aiRecommendation: { type: DataTypes.TEXT },
+  status: { type: DataTypes.ENUM('pending', 'investigating', 'confirmed_fraud', 'false_positive', 'resolved'), defaultValue: 'pending' },
+  reviewedBy: { type: DataTypes.INTEGER },
+  reviewedAt: { type: DataTypes.DATE },
+  notes: { type: DataTypes.TEXT }
+}, { tableName: 'fraud_alerts', timestamps: true });
+
+// FraudAlert associations
+Order.hasMany(FraudAlert, { foreignKey: 'orderId' });
+FraudAlert.belongsTo(Order, { foreignKey: 'orderId' });
+Customer.hasMany(FraudAlert, { foreignKey: 'customerId' });
+FraudAlert.belongsTo(Customer, { foreignKey: 'customerId' });
+
+// AbandonedCart Model
+const AbandonedCart = sequelize.define('AbandonedCart', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  customerId: { type: DataTypes.INTEGER },
+  customerEmail: { type: DataTypes.STRING, allowNull: false },
+  customerName: { type: DataTypes.STRING },
+  cartItems: { type: DataTypes.JSONB, defaultValue: [] }, // [{productId, name, price, quantity, imageUrl}]
+  cartTotal: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  cartItemCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+  abandonedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  recoveryStage: { type: DataTypes.ENUM('identified', 'email_1_sent', 'email_2_sent', 'email_3_sent', 'recovered', 'expired'), defaultValue: 'identified' },
+  recoveryEmailsSent: { type: DataTypes.INTEGER, defaultValue: 0 },
+  lastEmailSentAt: { type: DataTypes.DATE },
+  aiPersonalizedMessage: { type: DataTypes.TEXT },
+  aiRecommendedDiscount: { type: DataTypes.DECIMAL(5, 2) },
+  aiRecoveryStrategy: { type: DataTypes.TEXT },
+  discountCodeOffered: { type: DataTypes.STRING },
+  discountAmount: { type: DataTypes.DECIMAL(10, 2) },
+  deviceType: { type: DataTypes.STRING },
+  exitPage: { type: DataTypes.STRING },
+  status: { type: DataTypes.ENUM('active', 'recovered', 'expired', 'unsubscribed'), defaultValue: 'active' },
+  recoveredOrderId: { type: DataTypes.INTEGER },
+  recoveredAt: { type: DataTypes.DATE },
+  revenue: { type: DataTypes.DECIMAL(10, 2) }
+}, { tableName: 'abandoned_carts', timestamps: true });
+
+// AbandonedCart associations
+Customer.hasMany(AbandonedCart, { foreignKey: 'customerId' });
+AbandonedCart.belongsTo(Customer, { foreignKey: 'customerId' });
+
 // Notification Model - for persistent notification history
 const Notification = sequelize.define('Notification', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -432,5 +491,7 @@ export {
   PaymentMethod,
   Coupon,
   AuditLog,
-  Notification
+  Notification,
+  FraudAlert,
+  AbandonedCart
 };

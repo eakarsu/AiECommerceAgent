@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 
-export const LiveSearch = ({ data, onFilter, searchFields, placeholder }) => {
+export const LiveSearch = ({ data, onFilter, searchFields, placeholder, onServerSearch }) => {
   const [query, setQuery] = useState('');
   const debounceRef = useRef(null);
 
@@ -31,8 +31,12 @@ export const LiveSearch = ({ data, onFilter, searchFields, placeholder }) => {
 
     // Debounce the filter operation
     debounceRef.current = setTimeout(() => {
-      const filtered = filterData(value, data);
-      onFilter(filtered);
+      if (onServerSearch) {
+        onServerSearch(value);
+      } else {
+        const filtered = filterData(value, data);
+        onFilter(filtered);
+      }
     }, 150);
   };
 
@@ -41,7 +45,11 @@ export const LiveSearch = ({ data, onFilter, searchFields, placeholder }) => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
-    onFilter(data);
+    if (onServerSearch) {
+      onServerSearch('');
+    } else {
+      onFilter(data);
+    }
   };
 
   return (

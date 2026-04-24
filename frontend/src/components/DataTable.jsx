@@ -1,17 +1,18 @@
-export const DataTable = ({ columns, data, onRowClick, loading }) => {
+import { SkeletonTable } from './SkeletonLoader';
+import { EmptyState } from './EmptyState';
+
+export const DataTable = ({ columns, data, onRowClick, loading, emptyIcon, emptyTitle, emptyDescription }) => {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-      </div>
-    );
+    return <SkeletonTable rows={5} cols={columns.length} />;
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-500">
-        No data available
-      </div>
+      <EmptyState
+        icon={emptyIcon || '📭'}
+        title={emptyTitle || 'No data found'}
+        description={emptyDescription || 'There are no items to display.'}
+      />
     );
   }
 

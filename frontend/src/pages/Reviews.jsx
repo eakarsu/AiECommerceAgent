@@ -1,35 +1,56 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import { LiveSearch } from '../components/LiveSearch';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 
 export const Reviews = () => {
-  const [reviews, setReviews] = useState([]);
-  const [filteredReviews, setFilteredReviews] = useState([]);
+  const {
+    data: reviews, total, page, setPage, filters, handleFilterChange, clearFilters,
+    loading: pLoading, totalPages, limit, reload
+  } = usePaginatedApi('/api/reviews', { defaultLimit: 10 });
+
   const [selectedReview, setSelectedReview] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [aiInsight, setAiInsight] = useState(null);
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkAction, setBulkAction] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const { get, post, del, loading } = useApi();
+  const { showToast } = useNotifications();
 
-  useEffect(() => { loadReviews(); }, []);
-  const loadReviews = async () => {
-    try {
-      const data = await get('/api/reviews');
-      setReviews(data);
-      setFilteredReviews(data);
-      if (data.length > 0) generateAiSummary(data);
-    } catch (e) { console.error(e); }
-  };
+  const advancedSearchFilters = [
+    { key: 'rating', label: 'Rating', type: 'select', options: [
+      { value: '5', label: '5 Stars' }, { value: '4', label: '4 Stars' },
+      { value: '3', label: '3 Stars' }, { value: '2', label: '2 Stars' }, { value: '1', label: '1 Star' }
+    ]},
+    { key: 'sentiment', label: 'Sentiment', type: 'select', options: [
+      { value: 'positive', label: 'Positive' }, { value: 'neutral', label: 'Neutral' }, { value: 'negative', label: 'Negative' }
+    ]},
+    { key: 'responded', label: 'Responded', type: 'select', options: [
+      { value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }
+    ]}
+  ];
+
+  useEffect(() => {
+    if (reviews && reviews.length > 0) generateAiSummary(reviews);
+  }, [reviews]);
 
   const generateAiSummary = async (data) => {
     try {
       const result = await post('/api/ai/analyze', {
         type: 'reviews_summary',
         data: {
-          totalReviews: data.length,
+          totalReviews: total || data.length,
           positiveReviews: data.filter(r => r.sentiment === 'positive').length,
           negativeReviews: data.filter(r => r.sentiment === 'negative').length,
           pendingResponse: data.filter(r => !r.responded).length,
@@ -52,16 +73,9 @@ export const Reviews = () => {
       const result = await post('/api/ai/analyze', {
         type: 'review_analysis',
         data: {
-          productName: r.Product?.name,
-          customerName: r.customerName,
-          rating: r.rating,
-          title: r.title,
-          content: r.content,
-          sentiment: r.sentiment,
-          sentimentScore: r.sentimentScore,
-          keywords: r.keywords,
-          verified: r.verified,
-          responded: r.responded
+          productName: r.Product?.name, customerName: r.customerName, rating: r.rating,
+          title: r.title, content: r.content, sentiment: r.sentiment,
+          sentimentScore: r.sentimentScore, keywords: r.keywords, verified: r.verified, responded: r.responded
         }
       });
       setAiInsight(result.insight || result);
@@ -70,20 +84,54 @@ export const Reviews = () => {
     }
     setAiLoading(false);
   };
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this review?')) return;
-    try {
-      await del(`/api/reviews/${selectedReview.id}`);
-      setIsModalOpen(false);
-      loadReviews();
-    } catch (error) {
-      console.error('Error deleting review:', error);
-    }
+
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this review?');
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/reviews/${selectedReview.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Review deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting review:', error);
+        showToast('Failed to delete review', 'error');
+      }
+    });
+    setConfirmOpen(true);
   };
 
   const handleAiRespond = async () => {
-    try { const result = await post(`/api/reviews/${selectedReview.id}/ai-respond`, {}); setSelectedReview(result.review); loadReviews(); }
-    catch (e) { console.error(e); }
+    try {
+      const result = await post(`/api/reviews/${selectedReview.id}/ai-respond`, {});
+      setSelectedReview(result.review);
+      reload();
+      showToast('AI response generated successfully', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to generate AI response', 'error');
+    }
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(selectedIds.length === reviews.length ? [] : reviews.map(r => r.id));
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedIds.length === 0) return;
+    try {
+      await post('/api/bulk/reviews', { ids: selectedIds, action: bulkAction });
+      setSelectedIds([]);
+      setBulkAction('');
+      reload();
+      showToast('Bulk action completed successfully', 'success');
+    } catch (e) {
+      showToast('Bulk action failed', 'error');
+    }
   };
 
   const columns = [
@@ -119,20 +167,51 @@ export const Reviews = () => {
       )}
 
       <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card"><p className="text-sm text-gray-500">Total Reviews</p><p className="text-2xl font-bold">{reviews.length}</p></div>
+        <div className="stat-card"><p className="text-sm text-gray-500">Total Reviews</p><p className="text-2xl font-bold">{total || reviews.length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Positive</p><p className="text-2xl font-bold text-green-600">{reviews.filter(r => r.sentiment === 'positive').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Negative</p><p className="text-2xl font-bold text-red-600">{reviews.filter(r => r.sentiment === 'negative').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Pending Response</p><p className="text-2xl font-bold text-yellow-600">{reviews.filter(r => !r.responded).length}</p></div>
       </div>
 
       <div className="card space-y-4">
-        <LiveSearch
+        <AdvancedSearch filters={advancedSearchFilters} values={filters} onChange={handleFilterChange} onClear={clearFilters} />
+
+        <LiveSearch data={reviews} onFilter={() => {}} searchFields={['Product.name', 'customerName', 'content', 'sentiment']} placeholder="Search by product, customer, content, sentiment..." onServerSearch={(q) => handleFilterChange('search', q)} />
+
+        {selectedIds.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
+            <span className="font-medium text-blue-800">{selectedIds.length} selected</span>
+            <select value={bulkAction} onChange={(e) => setBulkAction(e.target.value)} className="input">
+              <option value="">Select action...</option>
+              <option value="mark_responded">Mark as Responded</option>
+              <option value="delete">Delete</option>
+            </select>
+            <button onClick={handleBulkAction} disabled={!bulkAction} className="btn btn-primary">Apply</button>
+            <button onClick={() => setSelectedIds([])} className="btn btn-secondary">Cancel</button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 px-2">
+          <input type="checkbox" checked={selectedIds.length === reviews.length && reviews.length > 0} onChange={toggleSelectAll} className="w-4 h-4" />
+          <span className="text-sm text-gray-600">Select all ({reviews.length})</span>
+        </div>
+
+        <DataTable
+          columns={[
+            { header: '', render: (row) => (
+              <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={(e) => { e.stopPropagation(); toggleSelect(row.id); }} onClick={(e) => e.stopPropagation()} className="w-4 h-4" />
+            )},
+            ...columns
+          ]}
           data={reviews}
-          onFilter={setFilteredReviews}
-          searchFields={['Product.name', 'Customer.name', 'content', 'sentiment']}
-          placeholder="Search by product, customer, content, sentiment..."
+          onRowClick={handleRowClick}
+          loading={pLoading}
+          emptyIcon="⭐"
+          emptyTitle="No reviews found"
+          emptyDescription="Try adjusting your filters."
         />
-        <DataTable columns={columns} data={filteredReviews} onRowClick={handleRowClick} loading={loading} />
+
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="reviews" />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Review Details" size="lg">
@@ -169,11 +248,13 @@ export const Reviews = () => {
             <div className="flex gap-3">
               {!selectedReview.responded && <button onClick={handleAiRespond} className="btn btn-ai">✨ AI Generate Response</button>}
               <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button>
-              <button onClick={handleDelete} className="btn btn-danger">🗑️ Delete</button>
+              <button onClick={handleDelete} className="btn btn-danger">Delete</button>
             </div>
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Delete" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

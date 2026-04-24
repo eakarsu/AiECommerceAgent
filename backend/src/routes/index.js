@@ -31,10 +31,14 @@ import {
   PaymentMethod,
   Coupon,
   AuditLog,
-  Notification
+  Notification,
+  FraudAlert,
+  AbandonedCart
 } from '../models/index.js';
 import websocketService from '../services/websocket.js';
 import { uploadSingle, uploadMultiple, getImageUrl } from '../services/upload.js';
+import { parsePaginationParams, formatPaginatedResponse } from '../utils/pagination.js';
+import { generatePDFReport } from '../utils/pdfGenerator.js';
 
 const router = Router();
 
@@ -91,6 +95,25 @@ router.get('/auth/demo-credentials', (req, res) => {
   });
 });
 
+router.post('/auth/logout', authenticateToken, async (req, res) => {
+  try {
+    await AuditLog.create({
+      userId: req.user.id,
+      userName: req.user.name || req.user.email,
+      action: 'update',
+      entityType: 'User',
+      entityId: req.user.id,
+      entityName: req.user.email,
+      changes: { action: 'logout' },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    res.json({ message: 'Logged out successfully' });
+  }
+});
+
 // ============================================
 // DASHBOARD ROUTES
 // ============================================
@@ -141,11 +164,40 @@ router.get('/dashboard/stats', authenticateToken, async (req, res) => {
 
 router.get('/products', authenticateToken, async (req, res) => {
   try {
-    const products = await Product.findAll({
+    const { status, category, search, minPrice, maxPrice, page, limit: lim } = req.query;
+
+    // Backward compatible: if no page/limit, return all
+    if (!page && !lim) {
+      const products = await Product.findAll({
+        include: [{ model: Inventory }],
+        order: [['createdAt', 'DESC']]
+      });
+      return res.json(products);
+    }
+
+    const { Op } = await import('sequelize');
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (status) where.status = status;
+    if (category) where.category = category;
+    if (search) {
+      where[Op.or] = [
+        { name: { [Op.iLike]: `%${search}%` } },
+        { sku: { [Op.iLike]: `%${search}%` } },
+        { description: { [Op.iLike]: `%${search}%` } }
+      ];
+    }
+    if (minPrice) where.currentPrice = { ...where.currentPrice, [Op.gte]: parseFloat(minPrice) };
+    if (maxPrice) where.currentPrice = { ...where.currentPrice, [Op.lte]: parseFloat(maxPrice) };
+
+    const { count, rows } = await Product.findAndCountAll({
+      where,
       include: [{ model: Inventory }],
-      order: [['createdAt', 'DESC']]
+      order: [[sortBy, sortOrder]],
+      limit,
+      offset
     });
-    res.json(products);
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -254,11 +306,16 @@ router.post('/products/:id/ai-optimize', authenticateToken, async (req, res) => 
 
 router.get('/pricing', authenticateToken, async (req, res) => {
   try {
-    const pricing = await Pricing.findAll({
-      include: [{ model: Product }],
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(pricing);
+    const { status, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const pricing = await Pricing.findAll({ include: [{ model: Product }], order: [['createdAt', 'DESC']] });
+      return res.json(pricing);
+    }
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (status) where.status = status;
+    const { count, rows } = await Pricing.findAndCountAll({ where, include: [{ model: Product }], order: [[sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -353,10 +410,23 @@ router.delete('/pricing/:id', authenticateToken, async (req, res) => {
 
 router.get('/campaigns', authenticateToken, async (req, res) => {
   try {
-    const campaigns = await AdCampaign.findAll({
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(campaigns);
+    const { platform, status, startDate, endDate, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const campaigns = await AdCampaign.findAll({ order: [['createdAt', 'DESC']] });
+      return res.json(campaigns);
+    }
+    const { Op } = await import('sequelize');
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (platform) where.platform = platform;
+    if (status) where.status = status;
+    if (startDate || endDate) {
+      where.startDate = {};
+      if (startDate) where.startDate[Op.gte] = new Date(startDate);
+      if (endDate) where.startDate[Op.lte] = new Date(endDate);
+    }
+    const { count, rows } = await AdCampaign.findAndCountAll({ where, order: [[sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -431,11 +501,17 @@ router.post('/campaigns/:id/ai-generate-copy', authenticateToken, async (req, re
 
 router.get('/inventory', authenticateToken, async (req, res) => {
   try {
-    const inventory = await Inventory.findAll({
-      include: [{ model: Product }],
-      order: [['updatedAt', 'DESC']]
-    });
-    res.json(inventory);
+    const { status, warehouse, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const inventory = await Inventory.findAll({ include: [{ model: Product }], order: [['updatedAt', 'DESC']] });
+      return res.json(inventory);
+    }
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (status) where.status = status;
+    if (warehouse) where.warehouse = warehouse;
+    const { count, rows } = await Inventory.findAndCountAll({ where, include: [{ model: Product }], order: [[sortBy === 'createdAt' ? 'updatedAt' : sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -500,10 +576,24 @@ router.delete('/inventory/:id', authenticateToken, async (req, res) => {
 
 router.get('/customers', authenticateToken, async (req, res) => {
   try {
-    const customers = await Customer.findAll({
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(customers);
+    const { segment, status, search, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const customers = await Customer.findAll({ order: [['createdAt', 'DESC']] });
+      return res.json(customers);
+    }
+    const { Op } = await import('sequelize');
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (segment) where.segment = segment;
+    if (status) where.status = status;
+    if (search) {
+      where[Op.or] = [
+        { name: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } }
+      ];
+    }
+    const { count, rows } = await Customer.findAndCountAll({ where, order: [[sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -564,11 +654,23 @@ router.delete('/customers/:id', authenticateToken, async (req, res) => {
 
 router.get('/orders', authenticateToken, async (req, res) => {
   try {
-    const orders = await Order.findAll({
-      include: [{ model: Customer }],
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(orders);
+    const { status, paymentStatus, startDate, endDate, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const orders = await Order.findAll({ include: [{ model: Customer }], order: [['createdAt', 'DESC']] });
+      return res.json(orders);
+    }
+    const { Op } = await import('sequelize');
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (status) where.status = status;
+    if (paymentStatus) where.paymentStatus = paymentStatus;
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) where.createdAt[Op.lte] = new Date(endDate);
+    }
+    const { count, rows } = await Order.findAndCountAll({ where, include: [{ model: Customer }], order: [[sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -640,11 +742,19 @@ router.delete('/orders/:id', authenticateToken, async (req, res) => {
 
 router.get('/reviews', authenticateToken, async (req, res) => {
   try {
-    const reviews = await Review.findAll({
-      include: [{ model: Product }],
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(reviews);
+    const { sentiment, rating, responded, productId, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const reviews = await Review.findAll({ include: [{ model: Product }], order: [['createdAt', 'DESC']] });
+      return res.json(reviews);
+    }
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (sentiment) where.sentiment = sentiment;
+    if (rating) where.rating = parseInt(rating);
+    if (responded !== undefined && responded !== '') where.responded = responded === 'true';
+    if (productId) where.productId = parseInt(productId);
+    const { count, rows } = await Review.findAndCountAll({ where, include: [{ model: Product }], order: [[sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -707,11 +817,17 @@ router.delete('/reviews/:id', authenticateToken, async (req, res) => {
 
 router.get('/content', authenticateToken, async (req, res) => {
   try {
-    const content = await Content.findAll({
-      include: [{ model: Product }],
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(content);
+    const { type, status, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const content = await Content.findAll({ include: [{ model: Product }], order: [['createdAt', 'DESC']] });
+      return res.json(content);
+    }
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (type) where.type = type;
+    if (status) where.status = status;
+    const { count, rows } = await Content.findAndCountAll({ where, include: [{ model: Product }], order: [[sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -797,10 +913,18 @@ router.post('/content/ai-generate', authenticateToken, async (req, res) => {
 
 router.get('/trends', authenticateToken, async (req, res) => {
   try {
-    const trends = await MarketTrend.findAll({
-      order: [['growthRate', 'DESC']]
-    });
-    res.json(trends);
+    const { status, competitionLevel, category, page, limit: lim } = req.query;
+    if (!page && !lim) {
+      const trends = await MarketTrend.findAll({ order: [['growthRate', 'DESC']] });
+      return res.json(trends);
+    }
+    const { page: pg, limit, offset, sortBy, sortOrder } = parsePaginationParams(req.query);
+    const where = {};
+    if (status) where.status = status;
+    if (competitionLevel) where.competitionLevel = competitionLevel;
+    if (category) where.category = category;
+    const { count, rows } = await MarketTrend.findAndCountAll({ where, order: [[sortBy === 'createdAt' ? 'growthRate' : sortBy, sortOrder]], limit, offset });
+    res.json(formatPaginatedResponse(rows, count, { page: pg, limit }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2201,9 +2325,115 @@ router.get('/export/inventory-alerts', authenticateToken, async (req, res) => {
   }
 });
 
+// PDF Export endpoints
+router.get('/export/orders/pdf', authenticateToken, async (req, res) => {
+  try {
+    const orders = await Order.findAll({ include: [{ model: Customer }], order: [['createdAt', 'DESC']] });
+    generatePDFReport(res, {
+      title: 'Orders Report',
+      headers: ['Order #', 'Customer', 'Status', 'Total', 'Payment', 'Date'],
+      rows: orders.map(o => [o.orderNumber, o.Customer?.name || 'N/A', o.status, `$${o.total}`, o.paymentStatus, new Date(o.createdAt).toLocaleDateString()]),
+      filename: `orders-${Date.now()}.pdf`
+    });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.get('/export/products/pdf', authenticateToken, async (req, res) => {
+  try {
+    const products = await Product.findAll({ order: [['name', 'ASC']] });
+    generatePDFReport(res, {
+      title: 'Products Report',
+      headers: ['SKU', 'Name', 'Category', 'Price', 'Cost', 'Stock', 'Status'],
+      rows: products.map(p => [p.sku, p.name, p.category, `$${p.currentPrice}`, `$${p.cost || 0}`, p.stockQuantity || '-', p.status]),
+      filename: `products-${Date.now()}.pdf`
+    });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.get('/export/customers/pdf', authenticateToken, async (req, res) => {
+  try {
+    const customers = await Customer.findAll({ order: [['name', 'ASC']] });
+    generatePDFReport(res, {
+      title: 'Customers Report',
+      headers: ['Name', 'Email', 'Segment', 'Orders', 'Total Spent', 'LTV', 'Status'],
+      rows: customers.map(c => [c.name, c.email, c.segment, c.totalOrders, `$${c.totalSpent}`, `$${c.lifetimeValue}`, c.status]),
+      filename: `customers-${Date.now()}.pdf`
+    });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.get('/export/inventory-alerts/pdf', authenticateToken, async (req, res) => {
+  try {
+    const alerts = await InventoryAlert.findAll({ include: [{ model: Product }], order: [['createdAt', 'DESC']] });
+    generatePDFReport(res, {
+      title: 'Inventory Alerts Report',
+      headers: ['Product', 'SKU', 'Type', 'Status', 'Current Qty', 'Threshold', 'Date'],
+      rows: alerts.map(a => [a.Product?.name || 'N/A', a.Product?.sku || 'N/A', a.type, a.status, a.currentQuantity, a.threshold, new Date(a.createdAt).toLocaleDateString()]),
+      filename: `inventory-alerts-${Date.now()}.pdf`
+    });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 // ============================================
 // BULK ACTIONS ROUTES
 // ============================================
+
+// Bulk update inventory
+router.post('/bulk/inventory', authenticateToken, async (req, res) => {
+  try {
+    const { ids, action, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'No inventory IDs provided' });
+    }
+    let updated = 0;
+    const { Op } = await import('sequelize');
+    switch (action) {
+      case 'update_warehouse':
+        [updated] = await Inventory.update({ warehouse: data.warehouse }, { where: { id: { [Op.in]: ids } } });
+        break;
+      case 'bulk_restock':
+        const items = await Inventory.findAll({ where: { id: { [Op.in]: ids } } });
+        for (const item of items) {
+          const newQty = item.quantity + (data.quantity || item.reorderQuantity);
+          let status = 'in_stock';
+          if (newQty === 0) status = 'out_of_stock';
+          else if (newQty <= item.reorderPoint) status = 'low_stock';
+          else if (newQty > item.reorderQuantity * 2) status = 'overstocked';
+          await item.update({ quantity: newQty, status, lastRestocked: new Date() });
+          updated++;
+        }
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+    await AuditLog.create({ userId: req.user.id, userName: req.user.name || req.user.email, action: 'update', entityType: 'Inventory', entityName: `Bulk action on ${ids.length} items`, changes: { action, ids, data }, ipAddress: req.ip, userAgent: req.get('User-Agent') });
+    res.json({ success: true, updated, message: `${updated} inventory items updated` });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Bulk update reviews
+router.post('/bulk/reviews', authenticateToken, async (req, res) => {
+  try {
+    const { ids, action } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'No review IDs provided' });
+    }
+    let updated = 0;
+    const { Op } = await import('sequelize');
+    switch (action) {
+      case 'mark_responded':
+        [updated] = await Review.update({ responded: true }, { where: { id: { [Op.in]: ids } } });
+        break;
+      case 'delete':
+        updated = await Review.destroy({ where: { id: { [Op.in]: ids } } });
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+    await AuditLog.create({ userId: req.user.id, userName: req.user.name || req.user.email, action: action === 'delete' ? 'delete' : 'update', entityType: 'Review', entityName: `Bulk action on ${ids.length} reviews`, changes: { action, ids }, ipAddress: req.ip, userAgent: req.get('User-Agent') });
+    res.json({ success: true, updated, message: `${updated} reviews updated` });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
 
 // Bulk update products
 router.post('/bulk/products', authenticateToken, async (req, res) => {
@@ -2933,6 +3163,446 @@ router.put('/users/me/password', authenticateToken, async (req, res) => {
     await user.update({ password: hashedPassword });
 
     res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// FRAUD ALERTS ROUTES
+// ============================================
+
+// Get all fraud alerts
+router.get('/fraud-alerts', authenticateToken, async (req, res) => {
+  try {
+    const alerts = await FraudAlert.findAll({
+      include: [
+        { model: Order },
+        { model: Customer }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+    res.json(alerts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single fraud alert
+router.get('/fraud-alerts/:id', authenticateToken, async (req, res) => {
+  try {
+    const alert = await FraudAlert.findByPk(req.params.id, {
+      include: [
+        { model: Order },
+        { model: Customer }
+      ]
+    });
+    if (!alert) {
+      return res.status(404).json({ error: 'Fraud alert not found' });
+    }
+    res.json(alert);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create fraud alert
+router.post('/fraud-alerts', authenticateToken, async (req, res) => {
+  try {
+    const alert = await FraudAlert.create(req.body);
+    res.status(201).json(alert);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update fraud alert
+router.put('/fraud-alerts/:id', authenticateToken, async (req, res) => {
+  try {
+    const alert = await FraudAlert.findByPk(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ error: 'Fraud alert not found' });
+    }
+    await alert.update(req.body);
+    res.json(alert);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete fraud alert
+router.delete('/fraud-alerts/:id', authenticateToken, async (req, res) => {
+  try {
+    const alert = await FraudAlert.findByPk(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ error: 'Fraud alert not found' });
+    }
+    await alert.destroy();
+    res.json({ message: 'Fraud alert deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// AI analyze fraud alert
+router.post('/fraud-alerts/:id/ai-analyze', authenticateToken, async (req, res) => {
+  try {
+    const alert = await FraudAlert.findByPk(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ error: 'Fraud alert not found' });
+    }
+
+    const analysis = await openRouterService.analyzeFraudAlert(alert);
+    const parsed = JSON.parse(analysis);
+
+    await alert.update({
+      aiAnalysis: parsed.analysis,
+      aiRecommendation: parsed.recommendation
+    });
+
+    res.json({ alert, analysis: parsed });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Resolve fraud alert
+router.post('/fraud-alerts/:id/resolve', authenticateToken, async (req, res) => {
+  try {
+    const alert = await FraudAlert.findByPk(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ error: 'Fraud alert not found' });
+    }
+
+    const { status, notes } = req.body;
+    await alert.update({
+      status: status || 'resolved',
+      notes: notes || alert.notes,
+      reviewedBy: req.user.id,
+      reviewedAt: new Date()
+    });
+
+    res.json(alert);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// ABANDONED CARTS ROUTES
+// ============================================
+
+// Get all abandoned carts
+router.get('/abandoned-carts', authenticateToken, async (req, res) => {
+  try {
+    const carts = await AbandonedCart.findAll({
+      include: [{ model: Customer }],
+      order: [['abandonedAt', 'DESC']]
+    });
+    res.json(carts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single abandoned cart
+router.get('/abandoned-carts/:id', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.findByPk(req.params.id, {
+      include: [{ model: Customer }]
+    });
+    if (!cart) {
+      return res.status(404).json({ error: 'Abandoned cart not found' });
+    }
+    res.json(cart);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create abandoned cart
+router.post('/abandoned-carts', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.create(req.body);
+    res.status(201).json(cart);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update abandoned cart
+router.put('/abandoned-carts/:id', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.findByPk(req.params.id);
+    if (!cart) {
+      return res.status(404).json({ error: 'Abandoned cart not found' });
+    }
+    await cart.update(req.body);
+    res.json(cart);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete abandoned cart
+router.delete('/abandoned-carts/:id', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.findByPk(req.params.id);
+    if (!cart) {
+      return res.status(404).json({ error: 'Abandoned cart not found' });
+    }
+    await cart.destroy();
+    res.json({ message: 'Abandoned cart deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// AI recovery strategy for abandoned cart
+router.post('/abandoned-carts/:id/ai-recovery', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.findByPk(req.params.id);
+    if (!cart) {
+      return res.status(404).json({ error: 'Abandoned cart not found' });
+    }
+
+    const strategy = await openRouterService.generateCartRecoveryStrategy(cart);
+    const parsed = JSON.parse(strategy);
+
+    await cart.update({
+      aiPersonalizedMessage: parsed.personalizedMessage,
+      aiRecommendedDiscount: parsed.recommendedDiscount,
+      aiRecoveryStrategy: parsed.strategy
+    });
+
+    res.json({ cart, strategy: parsed });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send recovery email
+router.post('/abandoned-carts/:id/send-recovery-email', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.findByPk(req.params.id);
+    if (!cart) {
+      return res.status(404).json({ error: 'Abandoned cart not found' });
+    }
+
+    // Generate recovery strategy if not already done
+    if (!cart.aiPersonalizedMessage) {
+      const strategy = await openRouterService.generateCartRecoveryStrategy(cart);
+      const parsed = JSON.parse(strategy);
+      await cart.update({
+        aiPersonalizedMessage: parsed.personalizedMessage,
+        aiRecommendedDiscount: parsed.recommendedDiscount,
+        aiRecoveryStrategy: parsed.strategy,
+        discountCodeOffered: parsed.recommendedDiscount > 0 ? `COMEBACK${parsed.recommendedDiscount}` : null,
+        discountAmount: parsed.recommendedDiscount
+      });
+    }
+
+    // Send email via email service
+    await emailService.sendCartRecoveryEmail(cart, cart.customerEmail);
+
+    // Update recovery stage
+    const stages = ['identified', 'email_1_sent', 'email_2_sent', 'email_3_sent'];
+    const currentIndex = stages.indexOf(cart.recoveryStage);
+    const nextStage = stages[Math.min(currentIndex + 1, stages.length - 1)];
+
+    await cart.update({
+      recoveryStage: nextStage,
+      recoveryEmailsSent: (cart.recoveryEmailsSent || 0) + 1,
+      lastEmailSentAt: new Date()
+    });
+
+    res.json({ cart, message: 'Recovery email sent successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mark cart as recovered
+router.post('/abandoned-carts/:id/mark-recovered', authenticateToken, async (req, res) => {
+  try {
+    const cart = await AbandonedCart.findByPk(req.params.id);
+    if (!cart) {
+      return res.status(404).json({ error: 'Abandoned cart not found' });
+    }
+
+    const { orderId, revenue } = req.body;
+
+    await cart.update({
+      status: 'recovered',
+      recoveryStage: 'recovered',
+      recoveredOrderId: orderId,
+      recoveredAt: new Date(),
+      revenue: revenue || cart.cartTotal
+    });
+
+    res.json(cart);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// SAMPLE DATA SEED ROUTES (for testing AI features)
+// ============================================
+
+router.post('/seed/products', authenticateToken, async (req, res) => {
+  try {
+    const products = await Product.bulkCreate([
+      { sku: `SEED-${Date.now()}-1`, name: 'Wireless Noise-Cancelling Earbuds', description: 'Premium earbuds with ANC and 24h battery', category: 'Electronics', basePrice: 129.99, currentPrice: 119.99, cost: 45.00, status: 'active', tags: ['wireless', 'earbuds', 'anc'], aiOptimized: false, seoScore: 65 },
+      { sku: `SEED-${Date.now()}-2`, name: 'Organic Cotton T-Shirt', description: 'Soft organic cotton crew neck tee', category: 'Fashion', basePrice: 34.99, currentPrice: 29.99, cost: 10.00, status: 'active', tags: ['organic', 'cotton', 'tee'], aiOptimized: false, seoScore: 55 },
+      { sku: `SEED-${Date.now()}-3`, name: 'Smart LED Desk Lamp', description: 'Adjustable color temperature desk lamp with USB charging', category: 'Home', basePrice: 79.99, currentPrice: 69.99, cost: 25.00, status: 'active', tags: ['smart', 'led', 'desk'], aiOptimized: false, seoScore: 60 },
+    ]);
+    res.json({ message: 'Sample products created', count: products.length, data: products });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/pricing', authenticateToken, async (req, res) => {
+  try {
+    const products = await Product.findAll({ limit: 3, order: [['createdAt', 'DESC']] });
+    if (products.length === 0) return res.status(400).json({ error: 'No products found. Seed products first.' });
+    const pricing = await Pricing.bulkCreate(products.map(p => ({
+      productId: p.id, originalPrice: parseFloat(p.basePrice), suggestedPrice: parseFloat(p.basePrice) * 0.9, competitorPrice: parseFloat(p.basePrice) * 0.95, demandScore: Math.floor(Math.random() * 40) + 60, profitMargin: 55.00, priceChangeReason: 'AI-detected competitive pricing opportunity', aiConfidence: 85.0, status: 'pending'
+    })));
+    res.json({ message: 'Sample pricing created', count: pricing.length, data: pricing });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/campaigns', authenticateToken, async (req, res) => {
+  try {
+    const campaigns = await AdCampaign.bulkCreate([
+      { name: 'Sample Flash Sale Campaign', platform: 'google', budget: 2000.00, spent: 850.00, impressions: 45000, clicks: 1800, conversions: 120, ctr: 4.0, roas: 3.5, targetAudience: 'Bargain hunters 25-40', adCopy: 'Limited time deals! Save big on top products.', status: 'active', startDate: new Date(), endDate: new Date(Date.now() + 30 * 86400000), aiGenerated: false },
+      { name: 'Sample Social Media Push', platform: 'instagram', budget: 1500.00, spent: 600.00, impressions: 80000, clicks: 3200, conversions: 95, ctr: 4.0, roas: 4.2, targetAudience: 'Millennials interested in tech', adCopy: 'Discover what everyone is talking about.', status: 'active', startDate: new Date(), endDate: new Date(Date.now() + 14 * 86400000), aiGenerated: false },
+    ]);
+    res.json({ message: 'Sample campaigns created', count: campaigns.length, data: campaigns });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/reviews', authenticateToken, async (req, res) => {
+  try {
+    const products = await Product.findAll({ limit: 3, order: [['createdAt', 'DESC']] });
+    if (products.length === 0) return res.status(400).json({ error: 'No products found. Seed products first.' });
+    const reviews = await Review.bulkCreate([
+      { productId: products[0].id, customerName: 'John Smith', rating: 5, title: 'Absolutely love it!', content: 'This product exceeded my expectations. The quality is outstanding and it works exactly as described. Highly recommend to anyone looking for a premium experience.', responded: false, verified: true },
+      { productId: products[0].id, customerName: 'Jane Doe', rating: 2, title: 'Disappointed with quality', content: 'The product broke after just two weeks of use. Customer service was slow to respond. Would not buy again. Expected much better for the price.', responded: false, verified: true },
+      { productId: products.length > 1 ? products[1].id : products[0].id, customerName: 'Mike Wilson', rating: 4, title: 'Great value for money', content: 'Good product overall. Minor issue with packaging but the product itself is solid. Would recommend with minor reservations about shipping speed.', responded: false, verified: false },
+    ]);
+    res.json({ message: 'Sample reviews created', count: reviews.length, data: reviews });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/content', authenticateToken, async (req, res) => {
+  try {
+    const products = await Product.findAll({ limit: 1, order: [['createdAt', 'DESC']] });
+    const content = await Content.bulkCreate([
+      { type: 'product_description', title: 'Sample Product Description', content: 'This is a sample product description ready for AI optimization.', productId: products[0]?.id, platform: 'website', tone: 'professional', wordCount: 12, seoScore: 50, status: 'draft' },
+      { type: 'social_post', title: 'Sample Social Media Post', content: 'Check out our latest products! Great deals await.', platform: 'instagram', tone: 'casual', wordCount: 9, seoScore: 45, status: 'draft' },
+      { type: 'email', title: 'Sample Email Campaign', content: 'Dear Customer, we have exciting new arrivals just for you!', platform: 'email', tone: 'friendly', wordCount: 11, seoScore: 55, status: 'draft' },
+    ]);
+    res.json({ message: 'Sample content created', count: content.length, data: content });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/trends', authenticateToken, async (req, res) => {
+  try {
+    const trends = await MarketTrend.bulkCreate([
+      { category: 'Electronics', trendName: 'AI-Powered Wearables', description: 'Growing demand for AI-integrated smart devices', growthRate: 35.5, searchVolume: 125000, competitionLevel: 'high', opportunity: 'high', relatedKeywords: ['ai wearable', 'smart ring', 'health tracker'], status: 'rising' },
+      { category: 'Fashion', trendName: 'Sustainable Fashion', description: 'Eco-friendly and recycled materials trend', growthRate: 22.0, searchVolume: 89000, competitionLevel: 'medium', opportunity: 'high', relatedKeywords: ['sustainable', 'eco-friendly', 'recycled'], status: 'rising' },
+      { category: 'Home', trendName: 'Smart Kitchen Appliances', description: 'Connected kitchen devices with voice control', growthRate: 18.5, searchVolume: 67000, competitionLevel: 'medium', opportunity: 'medium', relatedKeywords: ['smart kitchen', 'connected appliance', 'voice control'], status: 'stable' },
+    ]);
+    res.json({ message: 'Sample trends created', count: trends.length, data: trends });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/competitors', authenticateToken, async (req, res) => {
+  try {
+    const competitors = await Competitor.bulkCreate([
+      { name: 'TechMart Pro', website: 'https://techmartpro.example.com', category: 'Electronics', priceRange: '$50-$500', marketShare: 15.5, strengthScore: 72, strengths: ['Fast shipping', 'Wide selection', 'Good reviews'], weaknesses: ['Higher prices', 'Limited support'], products: 450, avgRating: 4.2, status: 'active' },
+      { name: 'EcoShop Online', website: 'https://ecoshop.example.com', category: 'Sustainable', priceRange: '$20-$200', marketShare: 8.3, strengthScore: 65, strengths: ['Eco-friendly brand', 'Loyal customer base'], weaknesses: ['Small catalog', 'Slow shipping'], products: 180, avgRating: 4.5, status: 'active' },
+      { name: 'MegaDeal Store', website: 'https://megadeal.example.com', category: 'General', priceRange: '$10-$1000', marketShare: 22.0, strengthScore: 80, strengths: ['Lowest prices', 'Huge inventory', 'Fast delivery'], weaknesses: ['Poor customer service', 'Low quality items'], products: 2000, avgRating: 3.8, status: 'active' },
+    ]);
+    res.json({ message: 'Sample competitors created', count: competitors.length, data: competitors });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/ab-tests', authenticateToken, async (req, res) => {
+  try {
+    const tests = await ABTest.bulkCreate([
+      { name: 'Homepage Banner A/B Test', type: 'layout', variantA: { title: 'Summer Sale - 30% Off', color: 'blue', image: 'banner-a.jpg' }, variantB: { title: 'Flash Deals - Limited Time', color: 'red', image: 'banner-b.jpg' }, variantAViews: 5200, variantBViews: 5100, variantAConversions: 312, variantBConversions: 408, confidenceLevel: 92.5, startDate: new Date(Date.now() - 14 * 86400000), status: 'running' },
+      { name: 'Product Page Price Display', type: 'pricing', variantA: { showOriginal: true, strikethrough: true }, variantB: { showOriginal: false, showDiscount: true }, variantAViews: 3800, variantBViews: 3900, variantAConversions: 190, variantBConversions: 234, confidenceLevel: 88.0, startDate: new Date(Date.now() - 7 * 86400000), status: 'running' },
+    ]);
+    res.json({ message: 'Sample A/B tests created', count: tests.length, data: tests });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/forecasts', authenticateToken, async (req, res) => {
+  try {
+    const products = await Product.findAll({ limit: 3, order: [['createdAt', 'DESC']] });
+    const forecasts = await SalesForecast.bulkCreate([
+      { productId: products[0]?.id, category: 'Electronics', forecastDate: new Date(Date.now() + 30 * 86400000), predictedSales: 250, predictedRevenue: 29997.50, accuracy: 85.0, factors: ['seasonal demand', 'marketing push', 'competitor pricing'], aiModel: 'forecast-v1', notes: 'Sample forecast for testing' },
+      { productId: products[1]?.id, category: 'Fashion', forecastDate: new Date(Date.now() + 30 * 86400000), predictedSales: 180, predictedRevenue: 5398.20, accuracy: 78.0, factors: ['trend alignment', 'social media buzz'], aiModel: 'forecast-v1', notes: 'Sample forecast for testing' },
+      { category: 'Home', forecastDate: new Date(Date.now() + 60 * 86400000), predictedSales: 320, predictedRevenue: 22396.80, accuracy: 72.0, factors: ['housing market', 'seasonal pattern'], aiModel: 'forecast-v1', notes: 'Category-level sample forecast' },
+    ]);
+    res.json({ message: 'Sample forecasts created', count: forecasts.length, data: forecasts });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/segments', authenticateToken, async (req, res) => {
+  try {
+    const segments = await CustomerSegment.bulkCreate([
+      { name: 'High-Value Loyalists', description: 'Customers with repeat purchases and high AOV', criteria: { minOrders: 5, minSpend: 500, recency: 30 }, customerCount: 245, averageValue: 320.50, totalRevenue: 78522.50, growthRate: 12.5, churnRate: 5.2, recommendedActions: ['VIP program', 'Early access'], status: 'active' },
+      { name: 'At-Risk Churners', description: 'Previously active customers showing declining engagement', criteria: { lastPurchase: 90, engagementDrop: 50 }, customerCount: 180, averageValue: 85.00, totalRevenue: 15300.00, growthRate: -8.5, churnRate: 35.0, recommendedActions: ['Win-back campaign', 'Discount offer'], status: 'active' },
+      { name: 'New Explorers', description: 'First-time buyers in the last 30 days', criteria: { orderCount: 1, recency: 30 }, customerCount: 520, averageValue: 55.00, totalRevenue: 28600.00, growthRate: 25.0, churnRate: 15.0, recommendedActions: ['Welcome series', 'Product recommendations'], status: 'active' },
+    ]);
+    res.json({ message: 'Sample segments created', count: segments.length, data: segments });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/fraud-alerts', authenticateToken, async (req, res) => {
+  try {
+    const alerts = await FraudAlert.bulkCreate([
+      { transactionId: `TXN-${Date.now()}-1`, alertType: 'suspicious_order', riskScore: 85, riskLevel: 'high', indicators: ['Multiple failed payment attempts', 'New account', 'High value order', 'Mismatched addresses'], orderAmount: 899.99, customerEmail: 'suspicious.buyer@example.com', ipAddress: '192.168.1.100', shippingAddress: { street: '123 Main St', city: 'New York', state: 'NY', zip: '10001' }, billingAddress: { street: '456 Oak Ave', city: 'Los Angeles', state: 'CA', zip: '90001' }, status: 'pending' },
+      { transactionId: `TXN-${Date.now()}-2`, alertType: 'velocity_check', riskScore: 65, riskLevel: 'medium', indicators: ['3 orders in 10 minutes', 'Different shipping addresses'], orderAmount: 249.99, customerEmail: 'fast.buyer@example.com', ipAddress: '10.0.0.55', shippingAddress: { street: '789 Pine Rd', city: 'Chicago', state: 'IL', zip: '60601' }, billingAddress: { street: '789 Pine Rd', city: 'Chicago', state: 'IL', zip: '60601' }, status: 'pending' },
+      { transactionId: `TXN-${Date.now()}-3`, alertType: 'card_testing', riskScore: 92, riskLevel: 'critical', indicators: ['Multiple small transactions', 'Bot-like behavior', 'VPN detected', 'Known fraud pattern'], orderAmount: 4.99, customerEmail: 'test.card@tempmail.com', ipAddress: '203.0.113.42', shippingAddress: { street: '1 Test Lane', city: 'Unknown', state: 'XX', zip: '00000' }, billingAddress: { street: '1 Test Lane', city: 'Unknown', state: 'XX', zip: '00000' }, status: 'pending' },
+    ]);
+    res.json({ message: 'Sample fraud alerts created', count: alerts.length, data: alerts });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/seed/abandoned-carts', authenticateToken, async (req, res) => {
+  try {
+    const carts = await AbandonedCart.bulkCreate([
+      { customerEmail: 'sarah.jones@example.com', customerName: 'Sarah Jones', cartItems: [{ name: 'Wireless Headphones', price: 179.99, quantity: 1 }, { name: 'Phone Case', price: 29.99, quantity: 2 }], cartTotal: 239.97, cartItemCount: 3, abandonedAt: new Date(Date.now() - 2 * 3600000), recoveryStage: 'identified', recoveryEmailsSent: 0, deviceType: 'mobile', exitPage: 'checkout/payment', status: 'active' },
+      { customerEmail: 'mike.brown@example.com', customerName: 'Mike Brown', cartItems: [{ name: 'Smart Watch Pro', price: 279.99, quantity: 1 }], cartTotal: 279.99, cartItemCount: 1, abandonedAt: new Date(Date.now() - 24 * 3600000), recoveryStage: 'email_1_sent', recoveryEmailsSent: 1, lastEmailSentAt: new Date(Date.now() - 12 * 3600000), deviceType: 'desktop', exitPage: 'checkout/shipping', status: 'active' },
+      { customerEmail: 'lisa.chen@example.com', customerName: 'Lisa Chen', cartItems: [{ name: 'Yoga Mat Premium', price: 49.99, quantity: 1 }, { name: 'Resistance Bands Set', price: 29.99, quantity: 1 }, { name: 'Smart Jump Rope', price: 34.99, quantity: 1 }], cartTotal: 114.97, cartItemCount: 3, abandonedAt: new Date(Date.now() - 48 * 3600000), recoveryStage: 'email_2_sent', recoveryEmailsSent: 2, lastEmailSentAt: new Date(Date.now() - 24 * 3600000), deviceType: 'tablet', exitPage: 'cart', status: 'active' },
+    ]);
+    res.json({ message: 'Sample abandoned carts created', count: carts.length, data: carts });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

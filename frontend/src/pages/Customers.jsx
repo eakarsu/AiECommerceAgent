@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import { LiveSearch } from '../components/LiveSearch';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 
 export const Customers = () => {
-  const [customers, setCustomers] = useState([]);
-  const [filteredCustomers, setFilteredCustomers] = useState([]);
+  const {
+    data: customers, total, page, setPage, filters, handleFilterChange, clearFilters,
+    loading: pLoading, totalPages, limit, reload
+  } = usePaginatedApi('/api/customers', { defaultLimit: 10 });
+
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -20,24 +28,33 @@ export const Customers = () => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkAction, setBulkAction] = useState('');
   const [bulkData, setBulkData] = useState({ segment: '', status: '' });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const { get, post, del, loading } = useApi();
+  const { showToast } = useNotifications();
 
-  useEffect(() => { loadCustomers(); }, []);
-  const loadCustomers = async () => {
-    try {
-      const data = await get('/api/customers');
-      setCustomers(data);
-      setFilteredCustomers(data);
-      if (data.length > 0) generateAiSummary(data);
-    } catch (e) { console.error(e); }
-  };
+  const advancedSearchFilters = [
+    { key: 'segment', label: 'Segment', type: 'select', options: [
+      { value: 'New', label: 'New' }, { value: 'Regular', label: 'Regular' },
+      { value: 'VIP', label: 'VIP' }, { value: 'At Risk', label: 'At Risk' }
+    ]},
+    { key: 'status', label: 'Status', type: 'select', options: [
+      { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'churned', label: 'Churned' }
+    ]},
+    { key: 'search', label: 'Search', type: 'text' }
+  ];
+
+  useEffect(() => {
+    if (customers && customers.length > 0) generateAiSummary(customers);
+  }, [customers]);
 
   const generateAiSummary = async (data) => {
     try {
       const result = await post('/api/ai/analyze', {
         type: 'customers_summary',
         data: {
-          totalCustomers: data.length,
+          totalCustomers: total || data.length,
           vipCustomers: data.filter(c => c.segment === 'VIP').length,
           atRisk: data.filter(c => c.churnRisk > 30).length,
           totalLTV: data.reduce((sum, c) => sum + parseFloat(c.lifetimeValue || 0), 0),
@@ -63,15 +80,9 @@ export const Customers = () => {
       const result = await post('/api/ai/analyze', {
         type: 'customer_analysis',
         data: {
-          name: c.name,
-          segment: c.segment,
-          totalOrders: c.totalOrders,
-          totalSpent: c.totalSpent,
-          averageOrderValue: c.averageOrderValue,
-          lifetimeValue: c.lifetimeValue,
-          churnRisk: c.churnRisk,
-          status: c.status,
-          preferredCategories: c.preferredCategories
+          name: c.name, segment: c.segment, totalOrders: c.totalOrders, totalSpent: c.totalSpent,
+          averageOrderValue: c.averageOrderValue, lifetimeValue: c.lifetimeValue,
+          churnRisk: c.churnRisk, status: c.status, preferredCategories: c.preferredCategories
         }
       });
       setAiInsight(result.insight || result);
@@ -87,57 +98,64 @@ export const Customers = () => {
       setOrderHistory(data.orders);
       setOrderStats(data.stats);
       setShowOrderHistory(true);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const handleBulkAction = async () => {
     if (!bulkAction || selectedIds.length === 0) return;
     try {
-      await post('/api/bulk/customers', {
-        ids: selectedIds,
-        action: bulkAction,
-        data: bulkData
-      });
+      await post('/api/bulk/customers', { ids: selectedIds, action: bulkAction, data: bulkData });
       setSelectedIds([]);
       setBulkAction('');
       setBulkData({ segment: '', status: '' });
-      loadCustomers();
+      reload();
+      showToast('Bulk action completed successfully', 'success');
     } catch (e) {
       console.error(e);
-      alert('Bulk action failed');
+      showToast('Bulk action failed', 'error');
     }
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === filteredCustomers.length) {
+    if (selectedIds.length === customers.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredCustomers.map(c => c.id));
+      setSelectedIds(customers.map(c => c.id));
     }
   };
 
   const toggleSelect = (id) => {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this customer?')) return;
-    try {
-      await del(`/api/customers/${selectedCustomer.id}`);
-      setIsModalOpen(false);
-      loadCustomers();
-    } catch (error) {
-      console.error('Error deleting customer:', error);
-    }
+
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this customer?');
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/customers/${selectedCustomer.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Customer deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting customer:', error);
+        showToast('Failed to delete customer', 'error');
+      }
+    });
+    setConfirmOpen(true);
   };
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    try { await post('/api/customers', newCustomer); setIsNewModalOpen(false); setNewCustomer({ name: '', email: '', phone: '', segment: 'New' }); loadCustomers(); }
-    catch (e) { console.error(e); }
+    try {
+      await post('/api/customers', newCustomer);
+      setIsNewModalOpen(false);
+      setNewCustomer({ name: '', email: '', phone: '', segment: 'New' });
+      reload();
+      showToast('Customer created successfully', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to create customer', 'error');
+    }
   };
 
   const columns = [
@@ -178,103 +196,70 @@ export const Customers = () => {
       )}
 
       <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card"><p className="text-sm text-gray-500">Total Customers</p><p className="text-2xl font-bold">{customers.length}</p></div>
+        <div className="stat-card"><p className="text-sm text-gray-500">Total Customers</p><p className="text-2xl font-bold">{total || customers.length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">VIP Customers</p><p className="text-2xl font-bold text-green-600">{customers.filter(c => c.segment === 'VIP').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">At Risk</p><p className="text-2xl font-bold text-red-600">{customers.filter(c => c.churnRisk > 30).length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Total LTV</p><p className="text-2xl font-bold">${customers.reduce((sum, c) => sum + parseFloat(c.lifetimeValue || 0), 0).toLocaleString()}</p></div>
       </div>
 
       <div className="card space-y-4">
+        <AdvancedSearch filters={advancedSearchFilters} values={filters} onChange={handleFilterChange} onClear={clearFilters} />
+
         <LiveSearch
           data={customers}
-          onFilter={setFilteredCustomers}
+          onFilter={() => {}}
           searchFields={['name', 'email', 'phone', 'segment']}
           placeholder="Search by name, email, phone, segment..."
+          onServerSearch={(q) => handleFilterChange('search', q)}
         />
 
-        {/* Bulk Actions Bar */}
         {selectedIds.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
             <span className="font-medium text-blue-800">{selectedIds.length} selected</span>
-            <select
-              value={bulkAction}
-              onChange={(e) => setBulkAction(e.target.value)}
-              className="input"
-            >
+            <select value={bulkAction} onChange={(e) => setBulkAction(e.target.value)} className="input">
               <option value="">Select action...</option>
               <option value="update_segment">Update Segment</option>
               <option value="update_status">Update Status</option>
               <option value="delete">Delete</option>
             </select>
             {bulkAction === 'update_segment' && (
-              <select
-                value={bulkData.segment}
-                onChange={(e) => setBulkData({ ...bulkData, segment: e.target.value })}
-                className="input"
-              >
+              <select value={bulkData.segment} onChange={(e) => setBulkData({ ...bulkData, segment: e.target.value })} className="input">
                 <option value="">Select segment...</option>
-                <option value="New">New</option>
-                <option value="Regular">Regular</option>
-                <option value="VIP">VIP</option>
-                <option value="At Risk">At Risk</option>
+                <option value="New">New</option><option value="Regular">Regular</option><option value="VIP">VIP</option><option value="At Risk">At Risk</option>
               </select>
             )}
             {bulkAction === 'update_status' && (
-              <select
-                value={bulkData.status}
-                onChange={(e) => setBulkData({ ...bulkData, status: e.target.value })}
-                className="input"
-              >
+              <select value={bulkData.status} onChange={(e) => setBulkData({ ...bulkData, status: e.target.value })} className="input">
                 <option value="">Select status...</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="churned">Churned</option>
+                <option value="active">Active</option><option value="inactive">Inactive</option><option value="churned">Churned</option>
               </select>
             )}
-            <button
-              onClick={handleBulkAction}
-              disabled={!bulkAction || (bulkAction === 'update_segment' && !bulkData.segment) || (bulkAction === 'update_status' && !bulkData.status)}
-              className="btn btn-primary"
-            >
-              Apply
-            </button>
-            <button onClick={() => setSelectedIds([])} className="btn btn-secondary">
-              Cancel
-            </button>
+            <button onClick={handleBulkAction} disabled={!bulkAction || (bulkAction === 'update_segment' && !bulkData.segment) || (bulkAction === 'update_status' && !bulkData.status)} className="btn btn-primary">Apply</button>
+            <button onClick={() => setSelectedIds([])} className="btn btn-secondary">Cancel</button>
           </div>
         )}
 
-        {/* Select All Checkbox */}
         <div className="flex items-center gap-2 px-2">
-          <input
-            type="checkbox"
-            checked={selectedIds.length === filteredCustomers.length && filteredCustomers.length > 0}
-            onChange={toggleSelectAll}
-            className="w-4 h-4"
-          />
-          <span className="text-sm text-gray-600">Select all ({filteredCustomers.length})</span>
+          <input type="checkbox" checked={selectedIds.length === customers.length && customers.length > 0} onChange={toggleSelectAll} className="w-4 h-4" />
+          <span className="text-sm text-gray-600">Select all ({customers.length})</span>
         </div>
 
         <DataTable
           columns={[
-            {
-              header: '',
-              render: (row) => (
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(row.id)}
-                  onChange={(e) => { e.stopPropagation(); toggleSelect(row.id); }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-4 h-4"
-                />
-              )
-            },
+            { header: '', render: (row) => (
+              <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={(e) => { e.stopPropagation(); toggleSelect(row.id); }} onClick={(e) => e.stopPropagation()} className="w-4 h-4" />
+            )},
             ...columns
           ]}
-          data={filteredCustomers}
+          data={customers}
           onRowClick={handleRowClick}
-          loading={loading}
+          loading={pLoading}
+          emptyIcon="👥"
+          emptyTitle="No customers found"
+          emptyDescription="Try adjusting your filters or add a new customer."
         />
+
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="customers" />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Customer Details" size="lg">
@@ -291,23 +276,10 @@ export const Customers = () => {
                 </div>
               </div>
             </div>
-
-            {/* Tabs */}
             <div className="flex gap-2 border-b">
-              <button
-                onClick={() => setShowOrderHistory(false)}
-                className={`px-4 py-2 font-medium ${!showOrderHistory ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500'}`}
-              >
-                Overview
-              </button>
-              <button
-                onClick={() => loadOrderHistory(selectedCustomer.id)}
-                className={`px-4 py-2 font-medium ${showOrderHistory ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500'}`}
-              >
-                Order History
-              </button>
+              <button onClick={() => setShowOrderHistory(false)} className={`px-4 py-2 font-medium ${!showOrderHistory ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500'}`}>Overview</button>
+              <button onClick={() => loadOrderHistory(selectedCustomer.id)} className={`px-4 py-2 font-medium ${showOrderHistory ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500'}`}>Order History</button>
             </div>
-
             {!showOrderHistory ? (
               <>
                 <div className="grid grid-cols-4 gap-4">
@@ -334,20 +306,10 @@ export const Customers = () => {
               <div className="space-y-4">
                 {orderStats && (
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-blue-50 rounded-lg p-3 text-center">
-                      <p className="text-sm text-gray-500">Total Orders</p>
-                      <p className="text-xl font-bold text-blue-600">{orderStats.totalOrders}</p>
-                    </div>
-                    <div className="bg-green-50 rounded-lg p-3 text-center">
-                      <p className="text-sm text-gray-500">Total Spent</p>
-                      <p className="text-xl font-bold text-green-600">${orderStats.totalSpent?.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-purple-50 rounded-lg p-3 text-center">
-                      <p className="text-sm text-gray-500">Average Order</p>
-                      <p className="text-xl font-bold text-purple-600">${orderStats.averageOrder?.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <p className="text-sm text-gray-500">Orders by Status</p>
+                    <div className="bg-blue-50 rounded-lg p-3 text-center"><p className="text-sm text-gray-500">Total Orders</p><p className="text-xl font-bold text-blue-600">{orderStats.totalOrders}</p></div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center"><p className="text-sm text-gray-500">Total Spent</p><p className="text-xl font-bold text-green-600">${orderStats.totalSpent?.toFixed(2)}</p></div>
+                    <div className="bg-purple-50 rounded-lg p-3 text-center"><p className="text-sm text-gray-500">Average Order</p><p className="text-xl font-bold text-purple-600">${orderStats.averageOrder?.toFixed(2)}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center"><p className="text-sm text-gray-500">Orders by Status</p>
                       <div className="flex gap-1 justify-center mt-1">
                         {orderStats.ordersByStatus && Object.entries(orderStats.ordersByStatus).map(([status, count]) => (
                           <span key={status} className="text-xs badge badge-info">{status}: {count}</span>
@@ -362,17 +324,10 @@ export const Customers = () => {
                   ) : (
                     orderHistory?.map(order => (
                       <div key={order.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{order.orderId}</p>
-                          <p className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</p>
-                        </div>
+                        <div><p className="font-medium">{order.orderId}</p><p className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</p></div>
                         <div className="text-right">
                           <p className="font-bold">${parseFloat(order.total).toFixed(2)}</p>
-                          <span className={`badge ${
-                            order.status === 'delivered' ? 'badge-success' :
-                            order.status === 'shipped' ? 'badge-info' :
-                            order.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
-                          }`}>{order.status}</span>
+                          <span className={`badge ${order.status === 'delivered' ? 'badge-success' : order.status === 'shipped' ? 'badge-info' : order.status === 'cancelled' ? 'badge-danger' : 'badge-warning'}`}>{order.status}</span>
                         </div>
                       </div>
                     ))
@@ -380,7 +335,6 @@ export const Customers = () => {
                 </div>
               </div>
             )}
-
             <div className="flex gap-3">
               <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button>
               <button onClick={handleDelete} className="btn btn-danger">Delete</button>
@@ -397,6 +351,8 @@ export const Customers = () => {
           <div className="flex gap-3 pt-4"><button type="submit" className="btn btn-primary">Add Customer</button><button type="button" onClick={() => setIsNewModalOpen(false)} className="btn btn-secondary">Cancel</button></div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Action" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

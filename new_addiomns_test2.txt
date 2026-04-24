@@ -1,0 +1,49 @@
+ Quick Test Summary Table
+  ┌───────────────┬────────────────┬────────────────────────────────────────┐
+  │    Feature    │      Page      │              Test Action               │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Coupons       │ Coupons (🎟️)   │ Create coupon "SAVE20", 20% off        │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Order History │ Customers (👥) │ Click customer → "Order History" tab   │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Export CSV    │ Reports (📑)   │ Click any export button                │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Bulk Actions  │ Products (📦)  │ Check multiple → Select action → Apply │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Notifications │ Bell icon (🔔) │ Click notification → See modal         │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Image Upload  │ Products (📦)  │ Add/Edit product → Upload Image        │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Multi-user    │ User Mgmt (👤) │ Create users with different roles      │
+  ├───────────────┼────────────────┼────────────────────────────────────────┤
+  │ Audit Log     │ Audit Log (📜) │ View logged actions                    │
+  └───────────────┴────────────────┴────────────────────────────────────────┘
+  ---
+  Console Commands for Quick Testing
+
+  // Get auth token
+  const token = localStorage.getItem('token');
+
+  // Test Coupon Validation
+  fetch('/api/coupons/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ code: 'SAVE20', orderTotal: 100 })
+  }).then(r => r.json()).then(console.log);
+
+  // Test CSV Export
+  window.open('/api/export/products?format=csv', '_blank');
+
+  // Test Creating Notification
+  fetch('/api/notifications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({
+      userId: 1, category: 'order', title: 'Test', message: 'Test notification', severity: 'info'
+    })
+  }).then(r => r.json()).then(console.log);
+
+  // Test Audit Log
+  fetch('/api/audit-log?limit=10', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  }).then(r => r.json()).then(console.log);

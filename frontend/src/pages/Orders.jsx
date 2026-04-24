@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import { LiveSearch } from '../components/LiveSearch';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 import { ShippingCalculator } from '../components/ShippingCalculator';
 import { StripeProvider } from '../components/StripeProvider';
 import { PaymentForm } from '../components/PaymentForm';
+import { useNotifications } from '../context/NotificationContext';
 
 export const Orders = () => {
-  const [orders, setOrders] = useState([]);
-  const [filteredOrders, setFilteredOrders] = useState([]);
+  const { data: orders, total, page, setPage, filters, handleFilterChange, clearFilters, loading: pLoading, totalPages, limit, reload } = usePaginatedApi('/api/orders', { defaultLimit: 10 });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -25,24 +29,29 @@ export const Orders = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [savedCards, setSavedCards] = useState([]);
   const [selectedCardId, setSelectedCardId] = useState(null);
-  const [paymentMode, setPaymentMode] = useState('saved'); // 'saved' or 'new'
+  const [paymentMode, setPaymentMode] = useState('saved');
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState({ title: '', message: '', confirmText: 'Confirm' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkAction, setBulkAction] = useState('');
+  const [bulkData, setBulkData] = useState({ status: '' });
+  const [couponCode, setCouponCode] = useState('');
+  const [couponResult, setCouponResult] = useState(null);
   const [newOrder, setNewOrder] = useState({
     customerId: '', items: [], status: 'pending', paymentStatus: 'pending',
     subtotal: '', tax: '', shipping: '', total: ''
   });
   const { get, post, put, del, loading } = useApi();
+  const { showToast } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
   const processedOrderIdRef = useRef(null);
 
-  useEffect(() => { loadOrders(); }, []);
-
   // Auto-open checkout when redirected from Products page
   useEffect(() => {
     const orderId = location.state?.openCheckoutForOrderId;
-
-    // Only process if we have an orderId and haven't already processed this exact order
     if (orderId && orders.length > 0 && processedOrderIdRef.current !== orderId) {
       const order = orders.find(o => o.id === orderId);
       if (order && order.status === 'pending' && order.paymentStatus === 'pending') {
@@ -54,7 +63,6 @@ export const Orders = () => {
         setClientSecret(null);
         setCheckoutError(null);
         setIsCheckoutModalOpen(true);
-        // Clear the state using navigate
         navigate('/orders', { replace: true });
       }
     }
@@ -63,14 +71,6 @@ export const Orders = () => {
   useEffect(() => {
     if (orders.length > 0) generateAiSummary();
   }, [orders]);
-
-  const loadOrders = async () => {
-    try {
-      const data = await get('/api/orders');
-      setOrders(data);
-      setFilteredOrders(data);
-    } catch (e) { console.error(e); }
-  };
 
   const generateAiSummary = async () => {
     try {
@@ -114,14 +114,47 @@ export const Orders = () => {
     setAiLoading(false);
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this order?')) return;
+  const handleDelete = () => {
+    setConfirmMsg({ title: 'Delete Order', message: 'Are you sure you want to delete this order? This cannot be undone.', confirmText: 'Delete' });
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/orders/${selectedOrder.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Order deleted successfully', 'success');
+      } catch (error) {
+        showToast('Failed to delete order', 'error');
+      }
+    });
+    setConfirmOpen(true);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === orders.length) setSelectedIds([]);
+    else setSelectedIds(orders.map(o => o.id));
+  };
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedIds.length === 0) return;
     try {
-      await del(`/api/orders/${selectedOrder.id}`);
-      setIsModalOpen(false);
-      loadOrders();
-    } catch (error) {
-      console.error('Error deleting order:', error);
+      await post('/api/bulk/orders', { ids: selectedIds, action: bulkAction, data: bulkData });
+      setSelectedIds([]); setBulkAction(''); setBulkData({ status: '' });
+      reload();
+      showToast(`${selectedIds.length} orders updated`, 'success');
+    } catch (e) { showToast('Bulk action failed', 'error'); }
+  };
+
+  const handleValidateCoupon = async (cartTotal) => {
+    if (!couponCode.trim()) return;
+    try {
+      const result = await post('/api/coupons/validate', { code: couponCode, cartTotal });
+      setCouponResult(result);
+      showToast(`Coupon applied: -$${result.discount}`, 'success');
+    } catch (e) {
+      setCouponResult(null);
+      showToast(e.message || 'Invalid coupon', 'error');
     }
   };
 
@@ -138,8 +171,9 @@ export const Orders = () => {
       });
       setIsNewModalOpen(false);
       setNewOrder({ customerId: '', items: [], status: 'pending', paymentStatus: 'pending', subtotal: '', tax: '', shipping: '', total: '' });
-      loadOrders();
-    } catch (e) { console.error(e); }
+      reload();
+      showToast('Order created successfully', 'success');
+    } catch (e) { showToast('Failed to create order', 'error'); }
   };
 
   const handleCompleteOrder = async () => {
@@ -204,8 +238,8 @@ export const Orders = () => {
     setIsCheckoutModalOpen(false);
     setIsModalOpen(false);
     setSelectedOrder(null);
-    loadOrders();
-    alert('Payment successful! Order completed.');
+    reload();
+    showToast('Payment successful! Order completed.', 'success');
   };
 
   const handleDemoComplete = async () => {
@@ -227,11 +261,10 @@ export const Orders = () => {
       setIsCheckoutModalOpen(false);
       setIsModalOpen(false);
       setSelectedOrder(null);
-      loadOrders();
-      alert('Order completed successfully!');
+      reload();
+      showToast('Order completed successfully!', 'success');
     } catch (e) {
-      console.error(e);
-      alert('Failed to complete order');
+      showToast('Failed to complete order', 'error');
     }
   };
 
@@ -256,8 +289,8 @@ export const Orders = () => {
         setIsCheckoutModalOpen(false);
         setIsModalOpen(false);
         setSelectedOrder(null);
-        loadOrders();
-        alert('Payment successful! Order completed.');
+        reload();
+        showToast('Payment successful! Order completed.', 'success');
       } else {
         setCheckoutError(result.error || 'Payment failed');
       }
@@ -312,20 +345,67 @@ export const Orders = () => {
       )}
 
       <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card"><p className="text-sm text-gray-500">Total Orders</p><p className="text-2xl font-bold">{orders.length}</p></div>
+        <div className="stat-card"><p className="text-sm text-gray-500">Total Orders</p><p className="text-2xl font-bold">{total}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Pending</p><p className="text-2xl font-bold text-yellow-600">{orders.filter(o => o.status === 'pending').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Delivered</p><p className="text-2xl font-bold text-green-600">{orders.filter(o => o.status === 'delivered').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Total Revenue</p><p className="text-2xl font-bold">${orders.filter(o => o.paymentStatus === 'paid').reduce((sum, o) => sum + parseFloat(o.total || 0), 0).toLocaleString()}</p></div>
       </div>
 
       <div className="card space-y-4">
-        <LiveSearch
-          data={orders}
-          onFilter={setFilteredOrders}
-          searchFields={['orderNumber', 'Customer.name', 'Customer.email', 'status', 'paymentStatus']}
-          placeholder="Search by order number, customer, status..."
+        <AdvancedSearch
+          filters={[
+            { key: 'status', label: 'Status', type: 'select', options: [{ value: 'pending', label: 'Pending' }, { value: 'processing', label: 'Processing' }, { value: 'shipped', label: 'Shipped' }, { value: 'delivered', label: 'Delivered' }, { value: 'cancelled', label: 'Cancelled' }, { value: 'refunded', label: 'Refunded' }] },
+            { key: 'paymentStatus', label: 'Payment', type: 'select', options: [{ value: 'pending', label: 'Pending' }, { value: 'paid', label: 'Paid' }, { value: 'failed', label: 'Failed' }, { value: 'refunded', label: 'Refunded' }] },
+            { key: 'startDate', label: 'Start Date', type: 'date' },
+            { key: 'endDate', label: 'End Date', type: 'date' }
+          ]}
+          values={filters}
+          onChange={handleFilterChange}
+          onClear={clearFilters}
         />
-        <DataTable columns={columns} data={filteredOrders} onRowClick={handleRowClick} loading={loading} />
+
+        {selectedIds.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
+            <span className="font-medium text-blue-800">{selectedIds.length} selected</span>
+            <select value={bulkAction} onChange={(e) => setBulkAction(e.target.value)} className="input w-auto">
+              <option value="">Select action...</option>
+              <option value="update_status">Update Status</option>
+              <option value="mark_shipped">Mark Shipped</option>
+              <option value="mark_delivered">Mark Delivered</option>
+            </select>
+            {bulkAction === 'update_status' && (
+              <select value={bulkData.status} onChange={(e) => setBulkData({ status: e.target.value })} className="input w-auto">
+                <option value="">Select status...</option>
+                <option value="processing">Processing</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+              </select>
+            )}
+            <button onClick={handleBulkAction} disabled={!bulkAction} className="btn btn-primary">Apply</button>
+            <button onClick={() => setSelectedIds([])} className="btn btn-secondary">Cancel</button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 px-2">
+          <input type="checkbox" checked={selectedIds.length === orders.length && orders.length > 0} onChange={toggleSelectAll} className="w-4 h-4" />
+          <span className="text-sm text-gray-600">Select all ({orders.length})</span>
+        </div>
+
+        <DataTable
+          columns={[
+            { header: '', render: (row) => (
+              <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={(e) => { e.stopPropagation(); toggleSelect(row.id); }} onClick={(e) => e.stopPropagation()} className="w-4 h-4" />
+            )},
+            ...columns
+          ]}
+          data={orders}
+          onRowClick={handleRowClick}
+          loading={pLoading}
+          emptyIcon="🛒"
+          emptyTitle="No orders found"
+          emptyDescription="Try adjusting your filters or create a new order."
+        />
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="orders" />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Order Details" size="lg">
@@ -401,18 +481,20 @@ export const Orders = () => {
               )}
               <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button>
               {selectedOrder.paymentIntentId && selectedOrder.paymentStatus === 'paid' && (
-                <button onClick={async () => {
-                  if (!window.confirm('Issue a full refund for this order?')) return;
-                  try {
-                    const result = await post('/api/payments/refund', { orderId: selectedOrder.id });
-                    const updated = await get(`/api/orders/${selectedOrder.id}`);
-                    setSelectedOrder(updated);
-                    loadOrders();
-                    alert('Refund processed successfully!');
-                  } catch (e) {
-                    console.error(e);
-                    alert('Refund failed: ' + (e.message || 'Unknown error'));
-                  }
+                <button onClick={() => {
+                  setConfirmMsg({ title: 'Issue Refund', message: 'Issue a full refund for this order?', confirmText: 'Refund' });
+                  setConfirmAction(() => async () => {
+                    try {
+                      await post('/api/payments/refund', { orderId: selectedOrder.id });
+                      const updated = await get(`/api/orders/${selectedOrder.id}`);
+                      setSelectedOrder(updated);
+                      reload();
+                      showToast('Refund processed successfully!', 'success');
+                    } catch (e) {
+                      showToast('Refund failed: ' + (e.message || 'Unknown error'), 'error');
+                    }
+                  });
+                  setConfirmOpen(true);
                 }} className="btn btn-warning">Refund</button>
               )}
               {selectedOrder.paymentStatus === 'refunded' && (
@@ -758,6 +840,8 @@ export const Orders = () => {
           </div>
         )}
       </Modal>
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={confirmAction}
+        title={confirmMsg.title} message={confirmMsg.message} confirmText={confirmMsg.confirmText} />
     </div>
   );
 };

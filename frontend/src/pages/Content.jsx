@@ -1,34 +1,70 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 
 export const Content = () => {
-  const [content, setContent] = useState([]);
+  const {
+    data: content, total, page, setPage, filters, handleFilterChange, clearFilters,
+    loading: pLoading, totalPages, limit, reload
+  } = usePaginatedApi('/api/content', { defaultLimit: 10 });
+
   const [selectedContent, setSelectedContent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newContent, setNewContent] = useState({ type: 'product_description', title: '', context: '', platform: '' });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const { get, post, del, loading } = useApi();
+  const { showToast } = useNotifications();
 
-  useEffect(() => { loadContent(); }, []);
-  const loadContent = async () => { try { setContent(await get('/api/content')); } catch (e) { console.error(e); } };
+  const advancedSearchFilters = [
+    { key: 'type', label: 'Type', type: 'select', options: [
+      { value: 'product_description', label: 'Product Description' }, { value: 'ad_copy', label: 'Ad Copy' },
+      { value: 'email', label: 'Email' }, { value: 'social_post', label: 'Social Post' },
+      { value: 'blog', label: 'Blog' }, { value: 'seo_meta', label: 'SEO Meta' }
+    ]},
+    { key: 'status', label: 'Status', type: 'select', options: [
+      { value: 'draft', label: 'Draft' }, { value: 'approved', label: 'Approved' }, { value: 'published', label: 'Published' }
+    ]}
+  ];
+
   const handleRowClick = (c) => { setSelectedContent(c); setIsModalOpen(true); };
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this content?')) return;
-    try {
-      await del(`/api/content/${selectedContent.id}`);
-      setIsModalOpen(false);
-      loadContent();
-    } catch (error) {
-      console.error('Error deleting content:', error);
-    }
+
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this content?');
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/content/${selectedContent.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Content deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting content:', error);
+        showToast('Failed to delete content', 'error');
+      }
+    });
+    setConfirmOpen(true);
   };
 
   const handleGenerate = async (e) => {
     e.preventDefault();
-    try { await post('/api/content/ai-generate', { type: newContent.type, title: newContent.title, context: { description: newContent.context, platform: newContent.platform } }); setIsNewModalOpen(false); setNewContent({ type: 'product_description', title: '', context: '', platform: '' }); loadContent(); }
-    catch (e) { console.error(e); }
+    try {
+      await post('/api/content/ai-generate', { type: newContent.type, title: newContent.title, context: { description: newContent.context, platform: newContent.platform } });
+      setIsNewModalOpen(false);
+      setNewContent({ type: 'product_description', title: '', context: '', platform: '' });
+      reload();
+      showToast('Content generated successfully', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to generate content', 'error');
+    }
   };
 
   const typeColors = { product_description: 'bg-blue-100 text-blue-800', ad_copy: 'bg-orange-100 text-orange-800', email: 'bg-green-100 text-green-800', social_post: 'bg-pink-100 text-pink-800', blog: 'bg-purple-100 text-purple-800', seo_meta: 'bg-teal-100 text-teal-800' };
@@ -60,13 +96,17 @@ export const Content = () => {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card"><p className="text-sm text-gray-500">Total Content</p><p className="text-2xl font-bold">{content.length}</p></div>
+        <div className="stat-card"><p className="text-sm text-gray-500">Total Content</p><p className="text-2xl font-bold">{total || content.length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Published</p><p className="text-2xl font-bold text-green-600">{content.filter(c => c.status === 'published').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Drafts</p><p className="text-2xl font-bold text-yellow-600">{content.filter(c => c.status === 'draft').length}</p></div>
         <div className="stat-card"><p className="text-sm text-gray-500">Avg SEO Score</p><p className="text-2xl font-bold">{Math.round(content.reduce((sum, c) => sum + (c.seoScore || 0), 0) / content.length || 0)}</p></div>
       </div>
 
-      <div className="card"><DataTable columns={columns} data={content} onRowClick={handleRowClick} loading={loading} /></div>
+      <div className="card space-y-4">
+        <AdvancedSearch filters={advancedSearchFilters} values={filters} onChange={handleFilterChange} onClear={clearFilters} />
+        <DataTable columns={columns} data={content} onRowClick={handleRowClick} loading={pLoading} emptyIcon="✍️" emptyTitle="No content found" emptyDescription="Generate new content to get started." />
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="items" />
+      </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Content Details" size="lg">
         {selectedContent && (
@@ -83,7 +123,7 @@ export const Content = () => {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button>
-              <button onClick={handleDelete} className="btn btn-danger">🗑️ Delete</button>
+              <button onClick={handleDelete} className="btn btn-danger">Delete</button>
             </div>
           </div>
         )}
@@ -102,6 +142,8 @@ export const Content = () => {
           <div className="flex gap-3 pt-4"><button type="submit" className="btn btn-ai">✨ Generate</button><button type="button" onClick={() => setIsNewModalOpen(false)} className="btn btn-secondary">Cancel</button></div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Delete" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

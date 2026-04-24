@@ -1,45 +1,91 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import { LiveSearch } from '../components/LiveSearch';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 
 export const Inventory = () => {
-  const [inventory, setInventory] = useState([]);
-  const [filteredInventory, setFilteredInventory] = useState([]);
+  const {
+    data: inventory, total, page, setPage, filters, handleFilterChange, clearFilters,
+    loading: pLoading, totalPages, limit, reload
+  } = usePaginatedApi('/api/inventory', { defaultLimit: 10 });
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { get, put, del, loading } = useApi();
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkAction, setBulkAction] = useState('');
+  const [bulkData, setBulkData] = useState({ warehouse: '', quantity: '' });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
+  const { get, put, del, post, loading } = useApi();
+  const { showToast } = useNotifications();
 
-  useEffect(() => { loadInventory(); }, []);
-
-  const loadInventory = async () => {
-    try {
-      const data = await get('/api/inventory');
-      setInventory(data);
-      setFilteredInventory(data);
-    } catch (error) { console.error('Error:', error); }
-  };
+  const advancedSearchFilters = [
+    { key: 'status', label: 'Status', type: 'select', options: [
+      { value: 'in_stock', label: 'In Stock' }, { value: 'low_stock', label: 'Low Stock' },
+      { value: 'out_of_stock', label: 'Out of Stock' }, { value: 'overstocked', label: 'Overstocked' }
+    ]},
+    { key: 'warehouse', label: 'Warehouse', type: 'select', options: [
+      { value: 'US-East', label: 'US-East' }, { value: 'US-West', label: 'US-West' }, { value: 'US-Central', label: 'US-Central' }
+    ]}
+  ];
 
   const handleRowClick = (item) => { setSelectedItem(item); setIsModalOpen(true); };
 
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this inventory item?')) return;
-    try {
-      await del(`/api/inventory/${selectedItem.id}`);
-      setIsModalOpen(false);
-      loadInventory();
-    } catch (error) {
-      console.error('Error deleting inventory:', error);
-    }
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this inventory item?');
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/inventory/${selectedItem.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Inventory item deleted', 'success');
+      } catch (error) {
+        console.error('Error deleting inventory:', error);
+        showToast('Failed to delete inventory item', 'error');
+      }
+    });
+    setConfirmOpen(true);
   };
 
   const handleUpdateQuantity = async (newQty) => {
     try {
       await put(`/api/inventory/${selectedItem.id}`, { quantity: parseInt(newQty) });
-      loadInventory();
+      reload();
       setIsModalOpen(false);
-    } catch (error) { console.error('Error:', error); }
+      showToast('Inventory updated successfully', 'success');
+    } catch (error) {
+      console.error('Error:', error);
+      showToast('Failed to update inventory', 'error');
+    }
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(selectedIds.length === inventory.length ? [] : inventory.map(i => i.id));
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedIds.length === 0) return;
+    try {
+      await post('/api/bulk/inventory', { ids: selectedIds, action: bulkAction, data: bulkData });
+      setSelectedIds([]);
+      setBulkAction('');
+      setBulkData({ warehouse: '', quantity: '' });
+      reload();
+      showToast('Bulk action completed', 'success');
+    } catch (e) {
+      showToast('Bulk action failed', 'error');
+    }
   };
 
   const statusColors = { in_stock: 'badge-success', low_stock: 'badge-warning', out_of_stock: 'badge-danger', overstocked: 'badge-info' };
@@ -74,13 +120,53 @@ export const Inventory = () => {
       </div>
 
       <div className="card space-y-4">
-        <LiveSearch
+        <AdvancedSearch filters={advancedSearchFilters} values={filters} onChange={handleFilterChange} onClear={clearFilters} />
+
+        <LiveSearch data={inventory} onFilter={() => {}} searchFields={['Product.name', 'Product.sku', 'warehouse', 'status']} placeholder="Search by product, SKU, warehouse, status..." onServerSearch={(q) => handleFilterChange('search', q)} />
+
+        {selectedIds.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
+            <span className="font-medium text-blue-800">{selectedIds.length} selected</span>
+            <select value={bulkAction} onChange={(e) => setBulkAction(e.target.value)} className="input">
+              <option value="">Select action...</option>
+              <option value="update_warehouse">Update Warehouse</option>
+              <option value="bulk_restock">Bulk Restock</option>
+            </select>
+            {bulkAction === 'update_warehouse' && (
+              <select value={bulkData.warehouse} onChange={(e) => setBulkData({ ...bulkData, warehouse: e.target.value })} className="input">
+                <option value="">Select warehouse...</option>
+                <option value="US-East">US-East</option><option value="US-West">US-West</option><option value="US-Central">US-Central</option>
+              </select>
+            )}
+            {bulkAction === 'bulk_restock' && (
+              <input type="number" placeholder="Quantity" value={bulkData.quantity} onChange={(e) => setBulkData({ ...bulkData, quantity: e.target.value })} className="input w-32" />
+            )}
+            <button onClick={handleBulkAction} disabled={!bulkAction} className="btn btn-primary">Apply</button>
+            <button onClick={() => setSelectedIds([])} className="btn btn-secondary">Cancel</button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 px-2">
+          <input type="checkbox" checked={selectedIds.length === inventory.length && inventory.length > 0} onChange={toggleSelectAll} className="w-4 h-4" />
+          <span className="text-sm text-gray-600">Select all ({inventory.length})</span>
+        </div>
+
+        <DataTable
+          columns={[
+            { header: '', render: (row) => (
+              <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={(e) => { e.stopPropagation(); toggleSelect(row.id); }} onClick={(e) => e.stopPropagation()} className="w-4 h-4" />
+            )},
+            ...columns
+          ]}
           data={inventory}
-          onFilter={setFilteredInventory}
-          searchFields={['Product.name', 'Product.sku', 'warehouse', 'status']}
-          placeholder="Search by product, SKU, warehouse, status..."
+          onRowClick={handleRowClick}
+          loading={pLoading}
+          emptyIcon="📋"
+          emptyTitle="No inventory items found"
+          emptyDescription="Try adjusting your filters."
         />
-        <DataTable columns={columns} data={filteredInventory} onRowClick={handleRowClick} loading={loading} />
+
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="items" />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Inventory Details" size="md">
@@ -105,11 +191,13 @@ export const Inventory = () => {
             <div className="flex gap-3">
               <button onClick={() => handleUpdateQuantity(selectedItem.quantity + selectedItem.reorderQuantity)} className="btn btn-success">+ Restock ({selectedItem.reorderQuantity})</button>
               <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button>
-              <button onClick={handleDelete} className="btn btn-danger">🗑️ Delete</button>
+              <button onClick={handleDelete} className="btn btn-danger">Delete</button>
             </div>
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Delete" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

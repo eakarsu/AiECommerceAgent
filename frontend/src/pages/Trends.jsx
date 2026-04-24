@@ -1,10 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
 
 export const Trends = () => {
-  const [trends, setTrends] = useState([]);
+  const {
+    data: trends, total, page, setPage, filters, handleFilterChange, clearFilters,
+    loading: pLoading, totalPages, limit, reload
+  } = usePaginatedApi('/api/trends', { defaultLimit: 10 });
+
   const [selectedTrend, setSelectedTrend] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -12,23 +21,32 @@ export const Trends = () => {
   const [aiInsight, setAiInsight] = useState(null);
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const { get, post, del, loading } = useApi();
+  const { showToast } = useNotifications();
 
-  useEffect(() => { loadTrends(); }, []);
-  const loadTrends = async () => {
-    try {
-      const data = await get('/api/trends');
-      setTrends(data);
-      if (data.length > 0) generateAiSummary(data);
-    } catch (e) { console.error(e); }
-  };
+  const advancedSearchFilters = [
+    { key: 'status', label: 'Status', type: 'select', options: [
+      { value: 'rising', label: 'Rising' }, { value: 'stable', label: 'Stable' }, { value: 'declining', label: 'Declining' }
+    ]},
+    { key: 'competitionLevel', label: 'Competition', type: 'select', options: [
+      { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }
+    ]},
+    { key: 'category', label: 'Category', type: 'text' }
+  ];
+
+  useEffect(() => {
+    if (trends && trends.length > 0) generateAiSummary(trends);
+  }, [trends]);
 
   const generateAiSummary = async (data) => {
     try {
       const result = await post('/api/ai/analyze', {
         type: 'trends_summary',
         data: {
-          totalTrends: data.length,
+          totalTrends: total || data.length,
           risingTrends: data.filter(t => t.status === 'rising').length,
           highOpportunity: data.filter(t => t.opportunity === 'high').length,
           avgGrowth: data.reduce((sum, t) => sum + parseFloat(t.growthRate || 0), 0) / data.length,
@@ -50,13 +68,8 @@ export const Trends = () => {
       const result = await post('/api/ai/analyze', {
         type: 'trend_analysis',
         data: {
-          trendName: t.trendName,
-          category: t.category,
-          growthRate: t.growthRate,
-          searchVolume: t.searchVolume,
-          competitionLevel: t.competitionLevel,
-          opportunity: t.opportunity,
-          status: t.status
+          trendName: t.trendName, category: t.category, growthRate: t.growthRate, searchVolume: t.searchVolume,
+          competitionLevel: t.competitionLevel, opportunity: t.opportunity, status: t.status
         }
       });
       setAiInsight(result.insight || result);
@@ -65,21 +78,17 @@ export const Trends = () => {
     }
     setAiLoading(false);
   };
+
   const handleAiAnalyze = async () => {
     setAiLoading(true);
     try {
       const result = await post('/api/ai/analyze', {
         type: 'trend_deep_analysis',
         data: {
-          trendName: selectedTrend.trendName,
-          category: selectedTrend.category,
-          description: selectedTrend.description,
-          growthRate: selectedTrend.growthRate,
-          searchVolume: selectedTrend.searchVolume,
-          competitionLevel: selectedTrend.competitionLevel,
-          opportunity: selectedTrend.opportunity,
-          status: selectedTrend.status,
-          relatedKeywords: selectedTrend.relatedKeywords,
+          trendName: selectedTrend.trendName, category: selectedTrend.category, description: selectedTrend.description,
+          growthRate: selectedTrend.growthRate, searchVolume: selectedTrend.searchVolume,
+          competitionLevel: selectedTrend.competitionLevel, opportunity: selectedTrend.opportunity,
+          status: selectedTrend.status, relatedKeywords: selectedTrend.relatedKeywords,
           requestType: 'Provide detailed trend analysis with market entry strategies and product recommendations'
         }
       });
@@ -89,8 +98,35 @@ export const Trends = () => {
     }
     setAiLoading(false);
   };
-  const handleDelete = async () => { if (!window.confirm('Are you sure you want to delete this trend?')) return; try { await del(`/api/trends/${selectedTrend.id}`); setIsModalOpen(false); loadTrends(); } catch (e) { console.error(e); } };
-  const handleCreate = async (e) => { e.preventDefault(); try { await post('/api/trends', { ...newTrend, growthRate: parseFloat(newTrend.growthRate) }); setIsNewModalOpen(false); loadTrends(); } catch (e) { console.error(e); } };
+
+  const handleDelete = () => {
+    setConfirmMsg('Are you sure you want to delete this trend?');
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/trends/${selectedTrend.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Trend deleted successfully', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Failed to delete trend', 'error');
+      }
+    });
+    setConfirmOpen(true);
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+      await post('/api/trends', { ...newTrend, growthRate: parseFloat(newTrend.growthRate) });
+      setIsNewModalOpen(false);
+      reload();
+      showToast('Trend added successfully', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to add trend', 'error');
+    }
+  };
 
   const columns = [
     { header: 'Trend', render: (row) => (
@@ -129,7 +165,11 @@ export const Trends = () => {
         <div className="stat-card"><p className="text-sm text-gray-500">Categories</p><p className="text-2xl font-bold">{new Set(trends.map(t => t.category)).size}</p></div>
       </div>
 
-      <div className="card"><DataTable columns={columns} data={trends} onRowClick={handleRowClick} loading={loading} /></div>
+      <div className="card space-y-4">
+        <AdvancedSearch filters={advancedSearchFilters} values={filters} onChange={handleFilterChange} onClear={clearFilters} />
+        <DataTable columns={columns} data={trends} onRowClick={handleRowClick} loading={pLoading} emptyIcon="📈" emptyTitle="No trends found" emptyDescription="Add a new trend to start tracking." />
+        <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} noun="trends" />
+      </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Trend Details" size="lg">
         {selectedTrend && (
@@ -150,7 +190,7 @@ export const Trends = () => {
               </div>
               {aiLoading ? <p className="text-purple-600">Analyzing trend...</p> : <p className="text-purple-800">{aiInsight || 'Generating...'}</p>}
             </div>
-            <div className="flex gap-3"><button onClick={handleAiAnalyze} className="btn btn-ai">✨ Deep AI Analysis</button><button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button><button onClick={handleDelete} className="btn btn-danger">🗑️ Delete</button></div>
+            <div className="flex gap-3"><button onClick={handleAiAnalyze} className="btn btn-ai">✨ Deep AI Analysis</button><button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">Close</button><button onClick={handleDelete} className="btn btn-danger">Delete</button></div>
           </div>
         )}
       </Modal>
@@ -170,6 +210,8 @@ export const Trends = () => {
           <div className="flex gap-3 pt-4"><button type="submit" className="btn btn-primary">Add Trend</button><button type="button" onClick={() => setIsNewModalOpen(false)} className="btn btn-secondary">Cancel</button></div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => { confirmAction && confirmAction(); setConfirmOpen(false); }} title="Confirm Delete" message={confirmMsg} confirmText="Delete" confirmStyle="danger" />
     </div>
   );
 };

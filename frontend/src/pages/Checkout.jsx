@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
+import { useNotifications } from '../context/NotificationContext';
 import { ShippingCalculator } from '../components/ShippingCalculator';
 import { StripeProvider } from '../components/StripeProvider';
 import { PaymentForm } from '../components/PaymentForm';
@@ -15,13 +16,45 @@ export const Checkout = () => {
   const [order, setOrder] = useState(null);
   const [clientSecret, setClientSecret] = useState(null);
   const [error, setError] = useState(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponApplied, setCouponApplied] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
   const { post } = useApi();
   const navigate = useNavigate();
+  const { showToast } = useNotifications();
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const tax = subtotal * 0.08;
   const shipping = shippingMethod?.rate || 0;
-  const total = subtotal + tax + shipping;
+  const discount = couponApplied
+    ? couponApplied.discountType === 'percentage'
+      ? Math.min(subtotal * (couponApplied.discountValue / 100), couponApplied.maxDiscount || Infinity)
+      : couponApplied.discountValue
+    : 0;
+  const total = subtotal + tax + shipping - discount;
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    try {
+      const result = await post('/api/coupons/validate', { code: couponCode.toUpperCase(), orderAmount: subtotal });
+      if (result.valid) {
+        setCouponApplied(result.coupon || result);
+        showToast(`Coupon "${couponCode.toUpperCase()}" applied! You save $${(result.coupon?.discountValue || result.discountValue || discount).toFixed ? discount.toFixed(2) : discount}`, 'success');
+      } else {
+        showToast(result.message || 'Invalid coupon code', 'error');
+      }
+    } catch (e) {
+      showToast(e.message || 'Failed to validate coupon', 'error');
+    }
+    setCouponLoading(false);
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponApplied(null);
+    setCouponCode('');
+    showToast('Coupon removed', 'info');
+  };
 
   const handleCreateOrder = async () => {
     try {
@@ -31,14 +64,17 @@ export const Checkout = () => {
         subtotal: subtotal.toFixed(2),
         tax: tax.toFixed(2),
         shipping: shipping.toFixed(2),
+        discount: discount.toFixed(2),
         total: total.toFixed(2),
         shippingAddress: address,
+        couponCode: couponApplied ? couponCode.toUpperCase() : null,
         paymentStatus: 'pending',
         status: 'pending'
       };
 
       const createdOrder = await post('/api/orders', orderData);
       setOrder(createdOrder);
+      showToast('Order created successfully', 'success');
 
       // Create payment intent
       const { clientSecret: secret } = await post('/api/payments/create-intent', {
@@ -48,10 +84,12 @@ export const Checkout = () => {
       setStep(4);
     } catch (e) {
       setError(e.message || 'Failed to create order');
+      showToast('Failed to create order', 'error');
     }
   };
 
   const handlePaymentSuccess = () => {
+    showToast('Payment successful!', 'success');
     navigate('/checkout/success', { state: { order } });
   };
 
@@ -94,8 +132,52 @@ export const Checkout = () => {
               <p className="font-bold">${(item.price * item.quantity).toFixed(2)}</p>
             </div>
           ))}
+
+          {/* Coupon Code Input */}
           <div className="border-t pt-3">
-            <p className="text-right font-bold text-lg">Subtotal: ${subtotal.toFixed(2)}</p>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Coupon Code</label>
+            {couponApplied ? (
+              <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg p-3">
+                <div>
+                  <span className="font-mono font-bold text-green-700">{couponCode.toUpperCase()}</span>
+                  <span className="text-sm text-green-600 ml-2">
+                    (-${discount.toFixed(2)} {couponApplied.discountType === 'percentage' ? `(${couponApplied.discountValue}%)` : 'off'})
+                  </span>
+                </div>
+                <button onClick={handleRemoveCoupon} className="text-sm text-red-600 hover:text-red-800">Remove</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  placeholder="Enter coupon code"
+                  className="input flex-1 font-mono"
+                />
+                <button
+                  onClick={handleApplyCoupon}
+                  disabled={couponLoading || !couponCode.trim()}
+                  className="btn btn-secondary"
+                >
+                  {couponLoading ? 'Applying...' : 'Apply'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t pt-3 space-y-1">
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>Subtotal</span>
+              <span>${subtotal.toFixed(2)}</span>
+            </div>
+            {discount > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>Discount</span>
+                <span>-${discount.toFixed(2)}</span>
+              </div>
+            )}
+            <p className="text-right font-bold text-lg">Subtotal: ${(subtotal - discount).toFixed(2)}</p>
           </div>
           <button onClick={() => setStep(2)} className="btn btn-primary w-full">Continue to Address</button>
         </div>
@@ -136,6 +218,7 @@ export const Checkout = () => {
           <ShippingCalculator items={cart} onSelectMethod={setShippingMethod} />
           <div className="border-t pt-3 space-y-1">
             <p className="text-sm text-gray-600">Subtotal: ${subtotal.toFixed(2)}</p>
+            {discount > 0 && <p className="text-sm text-green-600">Discount: -${discount.toFixed(2)}</p>}
             <p className="text-sm text-gray-600">Tax: ${tax.toFixed(2)}</p>
             <p className="text-sm text-gray-600">Shipping: ${shipping.toFixed(2)}</p>
             <p className="font-bold text-lg">Total: ${total.toFixed(2)}</p>
@@ -153,6 +236,7 @@ export const Checkout = () => {
           <h2 className="font-semibold text-lg">Payment</h2>
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="text-sm text-gray-600">Order: {order?.orderNumber}</p>
+            {discount > 0 && <p className="text-sm text-green-600">Discount: -${discount.toFixed(2)}</p>}
             <p className="font-bold text-lg">Total: ${total.toFixed(2)}</p>
           </div>
           <StripeProvider clientSecret={clientSecret}>
@@ -160,7 +244,7 @@ export const Checkout = () => {
               clientSecret={clientSecret}
               amount={total}
               onSuccess={handlePaymentSuccess}
-              onError={(err) => setError(err.message)}
+              onError={(err) => { setError(err.message); showToast('Payment failed', 'error'); }}
             />
           </StripeProvider>
         </div>

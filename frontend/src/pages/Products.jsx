@@ -1,14 +1,37 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
+import { usePaginatedApi } from '../hooks/usePaginatedApi';
+import { useFormValidation } from '../hooks/useFormValidation';
+import { useNotifications } from '../context/NotificationContext';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import { LiveSearch } from '../components/LiveSearch';
 import { VariantManager } from '../components/VariantManager';
+import { Pagination } from '../components/Pagination';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdvancedSearch } from '../components/AdvancedSearch';
+import { FormField } from '../components/FormField';
 
 export const Products = () => {
-  const [products, setProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
+  const {
+    data,
+    total,
+    page,
+    setPage,
+    filters,
+    handleFilterChange,
+    clearFilters,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
+    loading: paginatedLoading,
+    totalPages,
+    limit,
+    reload
+  } = usePaginatedApi('/api/products', { defaultLimit: 10 });
+
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -27,18 +50,73 @@ export const Products = () => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkAction, setBulkAction] = useState('');
   const [bulkData, setBulkData] = useState({ status: '', category: '', adjustType: 'percentage', adjustValue: '' });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const { get, post, put, del, loading } = useApi();
+  const { showToast } = useNotifications();
   const navigate = useNavigate();
 
+  const { errors, validate, clearErrors } = useFormValidation({
+    name: { required: true },
+    sku: { required: true, minLength: 3 },
+    basePrice: { required: true, min: 0 },
+    currentPrice: { required: true, min: 0 }
+  });
+
+  const advancedSearchFilters = [
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+        { value: 'draft', label: 'Draft' }
+      ]
+    },
+    {
+      key: 'category',
+      label: 'Category',
+      type: 'select',
+      options: [
+        { value: 'Electronics', label: 'Electronics' },
+        { value: 'Fashion', label: 'Fashion' },
+        { value: 'Home', label: 'Home' },
+        { value: 'Sports', label: 'Sports' },
+        { value: 'Beauty', label: 'Beauty' }
+      ]
+    },
+    {
+      key: 'minPrice',
+      label: 'Min Price',
+      type: 'number'
+    },
+    {
+      key: 'maxPrice',
+      label: 'Max Price',
+      type: 'number'
+    },
+    {
+      key: 'search',
+      label: 'Search',
+      type: 'text'
+    }
+  ];
+
   useEffect(() => {
-    loadProducts();
     loadCustomers();
   }, []);
 
+  useEffect(() => {
+    if (data && data.length > 0) {
+      generateAiSummary(data);
+    }
+  }, [data]);
+
   const loadCustomers = async () => {
     try {
-      const data = await get('/api/customers');
-      setCustomers(data);
+      const customerData = await get('/api/customers');
+      setCustomers(customerData);
     } catch (error) {
       console.error('Error loading customers:', error);
     }
@@ -60,7 +138,7 @@ export const Products = () => {
       const subtotal = parseFloat(selectedProduct.currentPrice) * orderQuantity;
       const tax = subtotal * 0.08;
       const shipping = 0;
-      const total = subtotal + tax + shipping;
+      const totalAmount = subtotal + tax + shipping;
 
       const orderData = {
         customerId: parseInt(selectedCustomerId),
@@ -73,7 +151,7 @@ export const Products = () => {
         subtotal: subtotal.toFixed(2),
         tax: tax.toFixed(2),
         shipping: shipping.toFixed(2),
-        total: total.toFixed(2),
+        total: totalAmount.toFixed(2),
         status: 'pending',
         paymentStatus: 'pending'
       };
@@ -86,28 +164,17 @@ export const Products = () => {
     }
   };
 
-  const loadProducts = async () => {
-    try {
-      const data = await get('/api/products');
-      setProducts(data);
-      setFilteredProducts(data);
-      if (data.length > 0) generateAiSummary(data);
-    } catch (error) {
-      console.error('Error loading products:', error);
-    }
-  };
-
-  const generateAiSummary = async (data) => {
+  const generateAiSummary = async (productData) => {
     try {
       const result = await post('/api/ai/analyze', {
         type: 'products_summary',
         data: {
-          totalProducts: data.length,
-          activeProducts: data.filter(p => p.status === 'active').length,
-          aiOptimized: data.filter(p => p.aiOptimized).length,
-          avgPrice: data.reduce((sum, p) => sum + parseFloat(p.currentPrice || 0), 0) / data.length,
-          categories: [...new Set(data.map(p => p.category))],
-          lowStock: data.filter(p => p.Inventory?.status === 'low_stock').length
+          totalProducts: productData.length,
+          activeProducts: productData.filter(p => p.status === 'active').length,
+          aiOptimized: productData.filter(p => p.aiOptimized).length,
+          avgPrice: productData.reduce((sum, p) => sum + parseFloat(p.currentPrice || 0), 0) / productData.length,
+          categories: [...new Set(productData.map(p => p.category))],
+          lowStock: productData.filter(p => p.Inventory?.status === 'low_stock').length
         }
       });
       setAiSummary(result.insight || result);
@@ -145,23 +212,29 @@ export const Products = () => {
   const handleAiOptimize = async () => {
     try {
       await post(`/api/products/${selectedProduct.id}/ai-optimize`, {});
-      await loadProducts();
+      await reload();
       const updated = await get(`/api/products/${selectedProduct.id}`);
       setSelectedProduct(updated);
+      showToast('Product optimized successfully', 'success');
     } catch (error) {
       console.error('Error optimizing product:', error);
+      showToast('Failed to optimize product', 'error');
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this product?')) return;
-    try {
-      await del(`/api/products/${selectedProduct.id}`);
-      setIsModalOpen(false);
-      loadProducts();
-    } catch (error) {
-      console.error('Error deleting product:', error);
-    }
+  const handleDelete = () => {
+    setConfirmAction(() => async () => {
+      try {
+        await del(`/api/products/${selectedProduct.id}`);
+        setIsModalOpen(false);
+        reload();
+        showToast('Product deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting product:', error);
+        showToast('Failed to delete product', 'error');
+      }
+    });
+    setConfirmOpen(true);
   };
 
   const handleImageUpload = async (e, forNewProduct = false) => {
@@ -184,16 +257,15 @@ export const Products = () => {
 
       if (!response.ok) throw new Error('Upload failed');
 
-      const data = await response.json();
-      const imageUrl = data.file?.url || data.url;
+      const uploadData = await response.json();
+      const imageUrl = uploadData.file?.url || uploadData.url;
 
       if (forNewProduct) {
         setNewProduct(prev => ({ ...prev, imageUrl }));
       } else if (selectedProduct) {
-        // Update existing product with new image
         await put(`/api/products/${selectedProduct.id}`, { imageUrl });
         setSelectedProduct(prev => ({ ...prev, imageUrl }));
-        loadProducts();
+        reload();
       }
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -204,6 +276,13 @@ export const Products = () => {
 
   const handleCreateProduct = async (e) => {
     e.preventDefault();
+    const isValid = validate({
+      name: newProduct.name,
+      sku: newProduct.sku,
+      basePrice: newProduct.basePrice,
+      currentPrice: newProduct.currentPrice
+    });
+    if (!isValid) return;
     try {
       await post('/api/products', {
         ...newProduct,
@@ -213,43 +292,47 @@ export const Products = () => {
       });
       setIsNewModalOpen(false);
       setNewProduct({ sku: '', name: '', description: '', category: '', basePrice: '', currentPrice: '', cost: '', status: 'active', imageUrl: '' });
-      loadProducts();
+      clearErrors();
+      reload();
+      showToast('Product created successfully', 'success');
     } catch (error) {
       console.error('Error creating product:', error);
+      showToast('Failed to create product', 'error');
     }
   };
 
   const handleBulkAction = async () => {
     if (!bulkAction || selectedIds.length === 0) return;
     try {
-      const data = {};
-      if (bulkAction === 'update_status') data.status = bulkData.status;
-      if (bulkAction === 'update_category') data.category = bulkData.category;
+      const bulkPayload = {};
+      if (bulkAction === 'update_status') bulkPayload.status = bulkData.status;
+      if (bulkAction === 'update_category') bulkPayload.category = bulkData.category;
       if (bulkAction === 'adjust_price') {
-        data.adjustType = bulkData.adjustType;
-        data.adjustValue = parseFloat(bulkData.adjustValue);
+        bulkPayload.adjustType = bulkData.adjustType;
+        bulkPayload.adjustValue = parseFloat(bulkData.adjustValue);
       }
 
       await post('/api/bulk/products', {
         ids: selectedIds,
         action: bulkAction,
-        data
+        data: bulkPayload
       });
       setSelectedIds([]);
       setBulkAction('');
       setBulkData({ status: '', category: '', adjustType: 'percentage', adjustValue: '' });
-      loadProducts();
+      reload();
+      showToast('Bulk action completed successfully', 'success');
     } catch (e) {
       console.error(e);
-      alert('Bulk action failed');
+      showToast('Bulk action failed', 'error');
     }
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === filteredProducts.length) {
+    if (selectedIds.length === data.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredProducts.map(p => p.id));
+      setSelectedIds(data.map(p => p.id));
     }
   };
 
@@ -320,10 +403,18 @@ export const Products = () => {
 
       <div className="card space-y-4">
         <LiveSearch
-          data={products}
-          onFilter={setFilteredProducts}
+          data={data}
+          onFilter={() => {}}
           searchFields={['sku', 'name', 'description', 'category', 'status']}
           placeholder="Search by SKU, name, description, category..."
+          onServerSearch={(value) => handleFilterChange('search', value)}
+        />
+
+        <AdvancedSearch
+          filters={advancedSearchFilters}
+          values={filters}
+          onChange={handleFilterChange}
+          onClear={clearFilters}
         />
 
         {/* Bulk Actions Bar */}
@@ -407,12 +498,12 @@ export const Products = () => {
         <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 rounded-lg border">
           <input
             type="checkbox"
-            checked={selectedIds.length === filteredProducts.length && filteredProducts.length > 0}
+            checked={selectedIds.length === data.length && data.length > 0}
             onChange={toggleSelectAll}
             className="w-5 h-5 cursor-pointer accent-blue-600"
           />
           <span className="text-sm font-medium text-gray-700">
-            Select all products ({filteredProducts.length})
+            Select all products ({data.length})
           </span>
           {selectedIds.length > 0 && (
             <span className="text-sm text-blue-600 font-medium">
@@ -437,9 +528,17 @@ export const Products = () => {
             },
             ...columns
           ]}
-          data={filteredProducts}
+          data={data}
           onRowClick={handleRowClick}
-          loading={loading}
+          loading={paginatedLoading || loading}
+        />
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          total={total}
+          limit={limit}
         />
       </div>
 
@@ -549,14 +648,12 @@ export const Products = () => {
       <Modal isOpen={isNewModalOpen} onClose={() => setIsNewModalOpen(false)} title="Add New Product">
         <form onSubmit={handleCreateProduct} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+            <FormField label="SKU" error={errors.sku}>
               <input type="text" className="input" value={newProduct.sku} onChange={(e) => setNewProduct({...newProduct, sku: e.target.value})} required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            </FormField>
+            <FormField label="Name" error={errors.name}>
               <input type="text" className="input" value={newProduct.name} onChange={(e) => setNewProduct({...newProduct, name: e.target.value})} required />
-            </div>
+            </FormField>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -586,14 +683,12 @@ export const Products = () => {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Base Price</label>
+            <FormField label="Base Price" error={errors.basePrice}>
               <input type="number" step="0.01" className="input" value={newProduct.basePrice} onChange={(e) => setNewProduct({...newProduct, basePrice: e.target.value})} required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Current Price</label>
+            </FormField>
+            <FormField label="Current Price" error={errors.currentPrice}>
               <input type="number" step="0.01" className="input" value={newProduct.currentPrice} onChange={(e) => setNewProduct({...newProduct, currentPrice: e.target.value})} required />
-            </div>
+            </FormField>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Cost</label>
               <input type="number" step="0.01" className="input" value={newProduct.cost} onChange={(e) => setNewProduct({...newProduct, cost: e.target.value})} required />
@@ -722,6 +817,16 @@ export const Products = () => {
           </div>
         )}
       </Modal>
+
+      {/* Confirm Dialog for Delete */}
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmAction}
+        title="Delete Product"
+        message="Are you sure you want to delete this product? This cannot be undone."
+        confirmText="Delete"
+      />
     </div>
   );
 };
