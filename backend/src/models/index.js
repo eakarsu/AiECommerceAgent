@@ -9,6 +9,8 @@ const User = sequelize.define('User', {
   name: { type: DataTypes.STRING, allowNull: false },
   role: { type: DataTypes.ENUM('admin', 'manager', 'user'), defaultValue: 'user' },
   avatar: { type: DataTypes.STRING },
+  resetToken: { type: DataTypes.STRING },
+  resetTokenExpiry: { type: DataTypes.DATE },
   lastLogin: { type: DataTypes.DATE }
 }, { tableName: 'users', timestamps: true });
 
@@ -467,6 +469,121 @@ const Notification = sequelize.define('Notification', {
 User.hasMany(Notification, { foreignKey: 'userId' });
 Notification.belongsTo(User, { foreignKey: 'userId' });
 
+// AI Log Model — persists prompt + structured ai_results JSONB
+const AILog = sequelize.define('AILog', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  endpoint: { type: DataTypes.STRING, allowNull: false }, // e.g. "merchandising-mix"
+  user_id: { type: DataTypes.INTEGER },
+  input: { type: DataTypes.JSONB },                       // request body snapshot
+  ai_results: { type: DataTypes.JSONB },                  // parsed structured AI output
+  raw_response: { type: DataTypes.TEXT },                 // raw text for debugging
+  model: { type: DataTypes.STRING },
+  tokens_used: { type: DataTypes.INTEGER },
+  latency_ms: { type: DataTypes.INTEGER },
+  status: { type: DataTypes.ENUM('success', 'parse_failed', 'error'), defaultValue: 'success' }
+}, { tableName: 'ai_logs', timestamps: true });
+
+User.hasMany(AILog, { foreignKey: 'user_id' });
+AILog.belongsTo(User, { foreignKey: 'user_id' });
+
+// ============================================
+// NEW FEATURE MODELS
+// ============================================
+
+// Predictive inventory reorder agent
+const InventoryReorderSuggestion = sequelize.define('InventoryReorderSuggestion', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  productId: { type: DataTypes.INTEGER, allowNull: false },
+  current_stock: { type: DataTypes.INTEGER },
+  predicted_days_to_stockout: { type: DataTypes.INTEGER },
+  recommended_qty: { type: DataTypes.INTEGER },
+  lead_time_days: { type: DataTypes.INTEGER },
+  reasoning: { type: DataTypes.TEXT },
+  ai_results: { type: DataTypes.JSONB },
+  status: { type: DataTypes.ENUM('pending', 'approved', 'ordered', 'cancelled'), defaultValue: 'pending' },
+  raw_response: { type: DataTypes.TEXT },
+  model: { type: DataTypes.STRING },
+  latency_ms: { type: DataTypes.INTEGER },
+}, { tableName: 'inventory_reorder_suggestions', timestamps: true });
+
+Product.hasMany(InventoryReorderSuggestion, { foreignKey: 'productId' });
+InventoryReorderSuggestion.belongsTo(Product, { foreignKey: 'productId' });
+
+// Real-time price elasticity tester
+const PriceElasticityTest = sequelize.define('PriceElasticityTest', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  productId: { type: DataTypes.INTEGER, allowNull: false },
+  variant_a_price: { type: DataTypes.DECIMAL(10, 2) },
+  variant_b_price: { type: DataTypes.DECIMAL(10, 2) },
+  variant_a_views: { type: DataTypes.INTEGER, defaultValue: 0 },
+  variant_b_views: { type: DataTypes.INTEGER, defaultValue: 0 },
+  variant_a_conversions: { type: DataTypes.INTEGER, defaultValue: 0 },
+  variant_b_conversions: { type: DataTypes.INTEGER, defaultValue: 0 },
+  ai_proposal: { type: DataTypes.JSONB },
+  ai_results: { type: DataTypes.JSONB },
+  status: { type: DataTypes.ENUM('running', 'completed', 'cancelled'), defaultValue: 'running' },
+  winner: { type: DataTypes.STRING },
+  started_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  ended_at: { type: DataTypes.DATE },
+}, { tableName: 'price_elasticity_tests', timestamps: true });
+
+Product.hasMany(PriceElasticityTest, { foreignKey: 'productId' });
+PriceElasticityTest.belongsTo(Product, { foreignKey: 'productId' });
+
+// Visual product-photo critique
+const ProductPhotoCritique = sequelize.define('ProductPhotoCritique', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  productId: { type: DataTypes.INTEGER },
+  image_url: { type: DataTypes.STRING, allowNull: false },
+  overall_score: { type: DataTypes.INTEGER },
+  ai_results: { type: DataTypes.JSONB },
+  raw_response: { type: DataTypes.TEXT },
+  model: { type: DataTypes.STRING },
+  latency_ms: { type: DataTypes.INTEGER },
+}, { tableName: 'product_photo_critiques', timestamps: true });
+
+Product.hasMany(ProductPhotoCritique, { foreignKey: 'productId' });
+ProductPhotoCritique.belongsTo(Product, { foreignKey: 'productId' });
+
+// Conversational shopping concierge - chat session
+const ConciergeChatSession = sequelize.define('ConciergeChatSession', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  customerId: { type: DataTypes.INTEGER },
+  session_token: { type: DataTypes.STRING, unique: true },
+  cart_snapshot: { type: DataTypes.JSONB },
+  status: { type: DataTypes.ENUM('active', 'closed'), defaultValue: 'active' },
+}, { tableName: 'concierge_chat_sessions', timestamps: true });
+
+const ConciergeChatMessage = sequelize.define('ConciergeChatMessage', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  sessionId: { type: DataTypes.INTEGER, allowNull: false },
+  role: { type: DataTypes.ENUM('user', 'assistant', 'system', 'tool'), allowNull: false },
+  content: { type: DataTypes.TEXT },
+  tool_calls: { type: DataTypes.JSONB },
+  ai_results: { type: DataTypes.JSONB },
+}, { tableName: 'concierge_chat_messages', timestamps: true });
+
+ConciergeChatSession.hasMany(ConciergeChatMessage, { foreignKey: 'sessionId' });
+ConciergeChatMessage.belongsTo(ConciergeChatSession, { foreignKey: 'sessionId' });
+Customer.hasMany(ConciergeChatSession, { foreignKey: 'customerId' });
+ConciergeChatSession.belongsTo(Customer, { foreignKey: 'customerId' });
+
+// Fraud cluster (graph-based cross-order analysis)
+const FraudCluster = sequelize.define('FraudCluster', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  cluster_key: { type: DataTypes.STRING }, // shared fingerprint (e.g. ip, device, payment hash)
+  cluster_type: { type: DataTypes.STRING }, // 'ip' | 'email_domain' | 'device' | 'payment_fingerprint'
+  customer_ids: { type: DataTypes.JSONB },
+  order_ids: { type: DataTypes.JSONB },
+  alert_count: { type: DataTypes.INTEGER },
+  total_value: { type: DataTypes.DECIMAL(12, 2) },
+  ai_summary: { type: DataTypes.TEXT },
+  ai_results: { type: DataTypes.JSONB },
+  recommended_action: { type: DataTypes.STRING },
+  severity: { type: DataTypes.ENUM('low', 'medium', 'high', 'critical'), defaultValue: 'medium' },
+  status: { type: DataTypes.ENUM('open', 'investigating', 'resolved', 'false_positive'), defaultValue: 'open' },
+}, { tableName: 'fraud_clusters', timestamps: true });
+
 export {
   sequelize,
   User,
@@ -493,5 +610,12 @@ export {
   AuditLog,
   Notification,
   FraudAlert,
-  AbandonedCart
+  AbandonedCart,
+  AILog,
+  InventoryReorderSuggestion,
+  PriceElasticityTest,
+  ProductPhotoCritique,
+  ConciergeChatSession,
+  ConciergeChatMessage,
+  FraudCluster
 };

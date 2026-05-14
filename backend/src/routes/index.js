@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { authenticateToken, generateToken, requireAdmin, requireManager, requireRole } from '../middleware/auth.js';
+import { aiRateLimiter } from '../middleware/rateLimiter.js';
 import openRouterService from '../services/openrouter.js';
 import searchService from '../services/search.js';
 import shippingService from '../services/shipping.js';
@@ -245,6 +246,10 @@ router.get('/products/:id', authenticateToken, async (req, res) => {
 
 router.post('/products', authenticateToken, async (req, res) => {
   try {
+    const { name, price, category } = req.body;
+    if (!name || !price || !category) {
+      return res.status(400).json({ error: 'Validation failed: name, price, and category are required.' });
+    }
     const product = await Product.create(req.body);
     await Inventory.create({
       productId: product.id,
@@ -285,7 +290,7 @@ router.delete('/products/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/products/:id/ai-optimize', authenticateToken, async (req, res) => {
+router.post('/products/:id/ai-optimize', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const product = await Product.findByPk(req.params.id);
     if (!product) {
@@ -374,7 +379,7 @@ router.post('/pricing/:id/apply', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/pricing/ai-suggest', authenticateToken, async (req, res) => {
+router.post('/pricing/ai-suggest', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const { productId, competitorPrice, demandScore } = req.body;
     const product = await Product.findByPk(productId);
@@ -479,7 +484,7 @@ router.delete('/campaigns/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/campaigns/:id/ai-generate-copy', authenticateToken, async (req, res) => {
+router.post('/campaigns/:id/ai-generate-copy', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const campaign = await AdCampaign.findByPk(req.params.id);
     if (!campaign) {
@@ -774,7 +779,7 @@ router.get('/reviews/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/reviews/:id/ai-respond', authenticateToken, async (req, res) => {
+router.post('/reviews/:id/ai-respond', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const review = await Review.findByPk(req.params.id);
     if (!review) {
@@ -882,7 +887,7 @@ router.delete('/content/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/content/ai-generate', authenticateToken, async (req, res) => {
+router.post('/content/ai-generate', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const { type, context, title } = req.body;
     const generatedContent = await openRouterService.generateContent(type, context);
@@ -951,7 +956,7 @@ router.post('/trends', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/trends/:id/ai-analyze', authenticateToken, async (req, res) => {
+router.post('/trends/:id/ai-analyze', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const trend = await MarketTrend.findByPk(req.params.id);
     if (!trend) {
@@ -1028,7 +1033,7 @@ router.put('/competitors/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/competitors/:id/ai-analyze', authenticateToken, async (req, res) => {
+router.post('/competitors/:id/ai-analyze', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const competitor = await Competitor.findByPk(req.params.id);
     if (!competitor) {
@@ -1105,7 +1110,7 @@ router.put('/ab-tests/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/ab-tests/:id/ai-analyze', authenticateToken, async (req, res) => {
+router.post('/ab-tests/:id/ai-analyze', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const test = await ABTest.findByPk(req.params.id);
     if (!test) {
@@ -1172,7 +1177,7 @@ router.post('/forecasts', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/forecasts/ai-generate', authenticateToken, async (req, res) => {
+router.post('/forecasts/ai-generate', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const { productId, historicalData } = req.body;
     let product = null;
@@ -1253,7 +1258,7 @@ router.put('/segments/:id', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/segments/:id/ai-analyze', authenticateToken, async (req, res) => {
+router.post('/segments/:id/ai-analyze', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const segment = await CustomerSegment.findByPk(req.params.id);
     if (!segment) {
@@ -1904,7 +1909,7 @@ async function getOrCreateStripeCustomer(userId, stripe) {
 // GENERIC AI ANALYSIS ROUTE
 // ============================================
 
-router.post('/ai/analyze', authenticateToken, async (req, res) => {
+router.post('/ai/analyze', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const { type, data } = req.body;
 
@@ -3245,7 +3250,7 @@ router.delete('/fraud-alerts/:id', authenticateToken, async (req, res) => {
 });
 
 // AI analyze fraud alert
-router.post('/fraud-alerts/:id/ai-analyze', authenticateToken, async (req, res) => {
+router.post('/fraud-alerts/:id/ai-analyze', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const alert = await FraudAlert.findByPk(req.params.id);
     if (!alert) {
@@ -3359,7 +3364,7 @@ router.delete('/abandoned-carts/:id', authenticateToken, async (req, res) => {
 });
 
 // AI recovery strategy for abandoned cart
-router.post('/abandoned-carts/:id/ai-recovery', authenticateToken, async (req, res) => {
+router.post('/abandoned-carts/:id/ai-recovery', authenticateToken, aiRateLimiter, async (req, res) => {
   try {
     const cart = await AbandonedCart.findByPk(req.params.id);
     if (!cart) {
@@ -3450,7 +3455,7 @@ router.post('/abandoned-carts/:id/mark-recovered', authenticateToken, async (req
 // SAMPLE DATA SEED ROUTES (for testing AI features)
 // ============================================
 
-router.post('/seed/products', authenticateToken, async (req, res) => {
+router.post('/seed/products', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.bulkCreate([
       { sku: `SEED-${Date.now()}-1`, name: 'Wireless Noise-Cancelling Earbuds', description: 'Premium earbuds with ANC and 24h battery', category: 'Electronics', basePrice: 129.99, currentPrice: 119.99, cost: 45.00, status: 'active', tags: ['wireless', 'earbuds', 'anc'], aiOptimized: false, seoScore: 65 },
@@ -3463,7 +3468,7 @@ router.post('/seed/products', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/pricing', authenticateToken, async (req, res) => {
+router.post('/seed/pricing', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.findAll({ limit: 3, order: [['createdAt', 'DESC']] });
     if (products.length === 0) return res.status(400).json({ error: 'No products found. Seed products first.' });
@@ -3476,7 +3481,7 @@ router.post('/seed/pricing', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/campaigns', authenticateToken, async (req, res) => {
+router.post('/seed/campaigns', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const campaigns = await AdCampaign.bulkCreate([
       { name: 'Sample Flash Sale Campaign', platform: 'google', budget: 2000.00, spent: 850.00, impressions: 45000, clicks: 1800, conversions: 120, ctr: 4.0, roas: 3.5, targetAudience: 'Bargain hunters 25-40', adCopy: 'Limited time deals! Save big on top products.', status: 'active', startDate: new Date(), endDate: new Date(Date.now() + 30 * 86400000), aiGenerated: false },
@@ -3488,7 +3493,7 @@ router.post('/seed/campaigns', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/reviews', authenticateToken, async (req, res) => {
+router.post('/seed/reviews', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.findAll({ limit: 3, order: [['createdAt', 'DESC']] });
     if (products.length === 0) return res.status(400).json({ error: 'No products found. Seed products first.' });
@@ -3503,7 +3508,7 @@ router.post('/seed/reviews', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/content', authenticateToken, async (req, res) => {
+router.post('/seed/content', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.findAll({ limit: 1, order: [['createdAt', 'DESC']] });
     const content = await Content.bulkCreate([
@@ -3517,7 +3522,7 @@ router.post('/seed/content', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/trends', authenticateToken, async (req, res) => {
+router.post('/seed/trends', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const trends = await MarketTrend.bulkCreate([
       { category: 'Electronics', trendName: 'AI-Powered Wearables', description: 'Growing demand for AI-integrated smart devices', growthRate: 35.5, searchVolume: 125000, competitionLevel: 'high', opportunity: 'high', relatedKeywords: ['ai wearable', 'smart ring', 'health tracker'], status: 'rising' },
@@ -3530,7 +3535,7 @@ router.post('/seed/trends', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/competitors', authenticateToken, async (req, res) => {
+router.post('/seed/competitors', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const competitors = await Competitor.bulkCreate([
       { name: 'TechMart Pro', website: 'https://techmartpro.example.com', category: 'Electronics', priceRange: '$50-$500', marketShare: 15.5, strengthScore: 72, strengths: ['Fast shipping', 'Wide selection', 'Good reviews'], weaknesses: ['Higher prices', 'Limited support'], products: 450, avgRating: 4.2, status: 'active' },
@@ -3543,7 +3548,7 @@ router.post('/seed/competitors', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/ab-tests', authenticateToken, async (req, res) => {
+router.post('/seed/ab-tests', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const tests = await ABTest.bulkCreate([
       { name: 'Homepage Banner A/B Test', type: 'layout', variantA: { title: 'Summer Sale - 30% Off', color: 'blue', image: 'banner-a.jpg' }, variantB: { title: 'Flash Deals - Limited Time', color: 'red', image: 'banner-b.jpg' }, variantAViews: 5200, variantBViews: 5100, variantAConversions: 312, variantBConversions: 408, confidenceLevel: 92.5, startDate: new Date(Date.now() - 14 * 86400000), status: 'running' },
@@ -3555,7 +3560,7 @@ router.post('/seed/ab-tests', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/forecasts', authenticateToken, async (req, res) => {
+router.post('/seed/forecasts', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.findAll({ limit: 3, order: [['createdAt', 'DESC']] });
     const forecasts = await SalesForecast.bulkCreate([
@@ -3569,7 +3574,7 @@ router.post('/seed/forecasts', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/segments', authenticateToken, async (req, res) => {
+router.post('/seed/segments', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const segments = await CustomerSegment.bulkCreate([
       { name: 'High-Value Loyalists', description: 'Customers with repeat purchases and high AOV', criteria: { minOrders: 5, minSpend: 500, recency: 30 }, customerCount: 245, averageValue: 320.50, totalRevenue: 78522.50, growthRate: 12.5, churnRate: 5.2, recommendedActions: ['VIP program', 'Early access'], status: 'active' },
@@ -3582,7 +3587,7 @@ router.post('/seed/segments', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/fraud-alerts', authenticateToken, async (req, res) => {
+router.post('/seed/fraud-alerts', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const alerts = await FraudAlert.bulkCreate([
       { transactionId: `TXN-${Date.now()}-1`, alertType: 'suspicious_order', riskScore: 85, riskLevel: 'high', indicators: ['Multiple failed payment attempts', 'New account', 'High value order', 'Mismatched addresses'], orderAmount: 899.99, customerEmail: 'suspicious.buyer@example.com', ipAddress: '192.168.1.100', shippingAddress: { street: '123 Main St', city: 'New York', state: 'NY', zip: '10001' }, billingAddress: { street: '456 Oak Ave', city: 'Los Angeles', state: 'CA', zip: '90001' }, status: 'pending' },
@@ -3595,7 +3600,7 @@ router.post('/seed/fraud-alerts', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/seed/abandoned-carts', authenticateToken, async (req, res) => {
+router.post('/seed/abandoned-carts', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const carts = await AbandonedCart.bulkCreate([
       { customerEmail: 'sarah.jones@example.com', customerName: 'Sarah Jones', cartItems: [{ name: 'Wireless Headphones', price: 179.99, quantity: 1 }, { name: 'Phone Case', price: 29.99, quantity: 2 }], cartTotal: 239.97, cartItemCount: 3, abandonedAt: new Date(Date.now() - 2 * 3600000), recoveryStage: 'identified', recoveryEmailsSent: 0, deviceType: 'mobile', exitPage: 'checkout/payment', status: 'active' },

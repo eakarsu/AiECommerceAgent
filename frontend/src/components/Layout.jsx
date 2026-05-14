@@ -28,6 +28,14 @@ const menuItems = [
   { path: '/fraud-detector', name: 'Fraud Detector', icon: '🛡️' },
   { path: '/cart-abandonment', name: 'Cart Recovery', icon: '🛒' },
   { path: '/notifications', name: 'All Notifications', icon: '🔔' },
+  { path: '/inventory-reorder', name: 'AI Reorder', icon: '🔄' },
+  { path: '/price-elasticity', name: 'Price Elasticity', icon: '⚖️' },
+  { path: '/photo-critique', name: 'Photo Critique', icon: '📸' },
+  { path: '/concierge', name: 'Shopping Concierge', icon: '💬' },
+  { path: '/fraud-clusters', name: 'Fraud Clusters', icon: '🕵️' },
+  { path: '/visual-search', name: 'Visual Search', icon: '🖼️' },
+  { path: '/marketplace-sync', name: 'Marketplace Sync', icon: '🔗' },
+  { path: '/affiliate-referrals', name: 'Affiliate Referrals', icon: '🤝' },
 ];
 
 export const Layout = ({ children }) => {

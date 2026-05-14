@@ -33,7 +33,12 @@ export const Profile = () => {
       return;
     }
     try {
-      await put('/api/users/me/password', { currentPassword: passwords.current, newPassword: passwords.new });
+      // Use change-password endpoint added in aiExtra routes
+      await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({ current_password: passwords.current, new_password: passwords.new }),
+      }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); return d; });
       showToast('Password changed successfully', 'success');
       setPasswords({ current: '', new: '', confirm: '' });
     } catch (err) {
