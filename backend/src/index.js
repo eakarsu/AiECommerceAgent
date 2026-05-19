@@ -66,6 +66,7 @@ app.use('/api', (await import('./routes/marketplaceSync.js')).default);
 app.use('/api', (await import('./routes/bundleGenerator.js')).default);
 app.use('/api', (await import('./routes/subscriptionPredictor.js')).default);
 app.use('/api', (await import('./routes/influencerTracking.js')).default);
+app.use('/api', (await import('./routes/customViews.js')).default);
 
 // Health check
 app.get('/health', (req, res) => {

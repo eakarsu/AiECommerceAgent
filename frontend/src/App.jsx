@@ -43,6 +43,7 @@ import MarketplaceSync from './pages/MarketplaceSync';
 import AffiliateReferrals from './pages/AffiliateReferrals';
 
 import Batch03Features from './pages/Batch03Features';
+import CustomViewsPage from './pages/CustomViewsPage';
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { token, user, loading } = useAuth();
@@ -117,6 +118,7 @@ function App() {
               <Route path="/visual-search" element={<ProtectedRoute><VisualSearch /></ProtectedRoute>} />
               <Route path="/marketplace-sync" element={<ProtectedRoute><MarketplaceSync /></ProtectedRoute>} />
               <Route path="/affiliate-referrals" element={<ProtectedRoute><AffiliateReferrals /></ProtectedRoute>} />
+              <Route path="/store-views" element={<ProtectedRoute><CustomViewsPage /></ProtectedRoute>} />
             </Routes>
           </ErrorBoundary>
           <ToastContainer />

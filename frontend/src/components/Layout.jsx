@@ -36,6 +36,7 @@ const menuItems = [
   { path: '/visual-search', name: 'Visual Search', icon: '🖼️' },
   { path: '/marketplace-sync', name: 'Marketplace Sync', icon: '🔗' },
   { path: '/affiliate-referrals', name: 'Affiliate Referrals', icon: '🤝' },
+  { path: '/store-views', name: 'Store Views', icon: '🏬' },
 ];
 
 export const Layout = ({ children }) => {
