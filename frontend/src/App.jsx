@@ -32,6 +32,18 @@ import { Notifications } from './pages/Notifications';
 import { FraudDetector } from './pages/FraudDetector';
 import { CartAbandonment } from './pages/CartAbandonment';
 import { Profile } from './pages/Profile';
+import InventoryReorder from './pages/InventoryReorder';
+import PriceElasticity from './pages/PriceElasticity';
+import PhotoCritique from './pages/PhotoCritique';
+import Concierge from './pages/Concierge';
+import FraudClusters from './pages/FraudClusters';
+import ForgotPassword from './pages/ForgotPassword';
+import VisualSearch from './pages/VisualSearch';
+import MarketplaceSync from './pages/MarketplaceSync';
+import AffiliateReferrals from './pages/AffiliateReferrals';
+
+import Batch03Features from './pages/Batch03Features';
+import CustomViewsPage from './pages/CustomViewsPage';
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { token, user, loading } = useAuth();
@@ -67,7 +79,9 @@ function App() {
         <BrowserRouter>
           <ErrorBoundary>
             <Routes>
+          <Route path="/batch03" element={<Batch03Features />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
@@ -96,6 +110,15 @@ function App() {
               <Route path="/fraud-detector" element={<ProtectedRoute><FraudDetector /></ProtectedRoute>} />
               <Route path="/cart-abandonment" element={<ProtectedRoute><CartAbandonment /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/inventory-reorder" element={<ProtectedRoute><InventoryReorder /></ProtectedRoute>} />
+              <Route path="/price-elasticity" element={<ProtectedRoute><PriceElasticity /></ProtectedRoute>} />
+              <Route path="/photo-critique" element={<ProtectedRoute><PhotoCritique /></ProtectedRoute>} />
+              <Route path="/concierge" element={<ProtectedRoute><Concierge /></ProtectedRoute>} />
+              <Route path="/fraud-clusters" element={<ProtectedRoute><FraudClusters /></ProtectedRoute>} />
+              <Route path="/visual-search" element={<ProtectedRoute><VisualSearch /></ProtectedRoute>} />
+              <Route path="/marketplace-sync" element={<ProtectedRoute><MarketplaceSync /></ProtectedRoute>} />
+              <Route path="/affiliate-referrals" element={<ProtectedRoute><AffiliateReferrals /></ProtectedRoute>} />
+              <Route path="/store-views" element={<ProtectedRoute><CustomViewsPage /></ProtectedRoute>} />
             </Routes>
           </ErrorBoundary>
           <ToastContainer />

@@ -1,10 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createServer } from 'http';
 import routes from './routes/index.js';
+import aiNewRoutes from './routes/aiNew.js';
+import aiExtraRoutes from './routes/aiExtra.js';
+import aiPass5Routes from './routes/aiPass5.js';
 import { sequelize } from './models/index.js';
 import searchService from './services/search.js';
 import recommendationEngine from './services/recommendations.js';
@@ -19,8 +23,21 @@ dotenv.config({ path: join(__dirname, '../../.env') });
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
 
-// Middleware
-app.use(cors());
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
+// CORS configurable via env (CORS_ORIGINS=https://a.com,https://b.com)
+const allowedOrigins = (process.env.CORS_ORIGINS || '*')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: allowedOrigins.includes('*') ? true : allowedOrigins,
+  credentials: true,
+}));
 
 // Stripe webhook needs raw body - must be before express.json()
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
@@ -39,6 +56,17 @@ app.use((req, res, next) => {
 
 // API Routes
 app.use('/api', routes);
+app.use('/api', aiNewRoutes);
+app.use('/api', aiExtraRoutes);
+app.use('/api', aiPass5Routes);
+app.use('/api', (await import('./routes/agenticCSBot.js')).default);
+app.use('/api', (await import('./routes/competitiveIntelligence.js')).default);
+app.use('/api', (await import('./routes/visualSearch.js')).default);
+app.use('/api', (await import('./routes/marketplaceSync.js')).default);
+app.use('/api', (await import('./routes/bundleGenerator.js')).default);
+app.use('/api', (await import('./routes/subscriptionPredictor.js')).default);
+app.use('/api', (await import('./routes/influencerTracking.js')).default);
+app.use('/api', (await import('./routes/customViews.js')).default);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -66,6 +94,13 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('Database connection established');
 
+    // Ensure newly added tables (e.g. ai_logs) exist without dropping existing data
+    try {
+      await sequelize.sync({ alter: false });
+    } catch (e) {
+      console.warn('sequelize.sync warning:', e.message);
+    }
+
     // Initialize search index
     await searchService.ensureSearchIndex();
 
@@ -84,3 +119,11 @@ async function startServer() {
 }
 
 startServer();
+
+
+// === Batch 03 Gaps & Frontend Mounts ===
+try {
+  const _batch03 = require('../routes/batch03Gaps');
+  if (typeof authenticateToken === 'function') app.use('/api', authenticateToken, _batch03);
+  else app.use('/api', _batch03);
+} catch (_e) { /* batch03 gap routes optional */ }

@@ -9,7 +9,7 @@ dotenv.config({ path: join(__dirname, '../../../.env') });
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
 
 class OpenRouterService {
   constructor() {
@@ -31,8 +31,15 @@ class OpenRouterService {
       maxTokens = 10000
     } = options;
 
+    // In production, never fall back to mocks silently. ALLOW_AI_MOCKS env can override.
+    const allowMocks = process.env.ALLOW_AI_MOCKS === 'true' || process.env.NODE_ENV !== 'production';
+
     if (!this.apiKey || this.apiKey === 'your-openrouter-api-key-here') {
-      return this.getMockResponse(messages);
+      if (allowMocks) {
+        console.warn('[openrouter] No API key configured — returning MOCK response (dev mode).');
+        return this.getMockResponse(messages);
+      }
+      throw new Error('OPENROUTER_API_KEY is not configured');
     }
 
     try {
@@ -53,15 +60,19 @@ class OpenRouterService {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'OpenRouter API error');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `OpenRouter API error (${response.status})`);
       }
 
       const data = await response.json();
       return this.stripCodeBlocks(data.choices[0].message.content);
     } catch (error) {
       console.error('OpenRouter API error:', error);
-      return this.getMockResponse(messages);
+      if (allowMocks) {
+        console.warn('[openrouter] Falling back to MOCK response after API error (dev mode).');
+        return this.getMockResponse(messages);
+      }
+      throw error;
     }
   }
 
