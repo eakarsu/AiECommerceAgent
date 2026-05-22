@@ -44,6 +44,10 @@ import AffiliateReferrals from './pages/AffiliateReferrals';
 
 import Batch03Features from './pages/Batch03Features';
 import CustomViewsPage from './pages/CustomViewsPage';
+import ReturnRiskExchangeOptimizer from './pages/ReturnRiskExchangeOptimizer';
+
+import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
+import CodexOperationsFeature from './pages/CodexOperationsFeature';
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { token, user, loading } = useAuth();
@@ -79,6 +83,9 @@ function App() {
         <BrowserRouter>
           <ErrorBoundary>
             <Routes>
+        <Route path="/codex/custom-viz" element={<ProtectedRoute><CodexCustomVizFeature /></ProtectedRoute>} />
+        <Route path="/codex/operations" element={<ProtectedRoute><CodexOperationsFeature /></ProtectedRoute>} />
+
           <Route path="/batch03" element={<Batch03Features />} />
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -119,6 +126,7 @@ function App() {
               <Route path="/marketplace-sync" element={<ProtectedRoute><MarketplaceSync /></ProtectedRoute>} />
               <Route path="/affiliate-referrals" element={<ProtectedRoute><AffiliateReferrals /></ProtectedRoute>} />
               <Route path="/store-views" element={<ProtectedRoute><CustomViewsPage /></ProtectedRoute>} />
+              <Route path="/return-risk-exchange-optimizer" element={<ProtectedRoute><ReturnRiskExchangeOptimizer /></ProtectedRoute>} />
             </Routes>
           </ErrorBoundary>
           <ToastContainer />

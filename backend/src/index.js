@@ -67,6 +67,7 @@ app.use('/api', (await import('./routes/bundleGenerator.js')).default);
 app.use('/api', (await import('./routes/subscriptionPredictor.js')).default);
 app.use('/api', (await import('./routes/influencerTracking.js')).default);
 app.use('/api', (await import('./routes/customViews.js')).default);
+app.use('/api', (await import('./routes/returnRiskExchangeOptimizer.js')).default);
 
 // Health check
 app.get('/health', (req, res) => {
