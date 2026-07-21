@@ -8,7 +8,8 @@ const __dirname = dirname(__filename);
 
 dotenv.config({ path: join(__dirname, '../../../.env') });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'ai-ecommerce-agent-super-secret-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
 
 export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];

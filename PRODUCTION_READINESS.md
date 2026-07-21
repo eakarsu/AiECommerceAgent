@@ -1,0 +1,7 @@
+# Governed customer-to-fulfillment operations
+
+The supported API is `/api/governance`. It records tenant- and subject-scoped availability, versioned quotes, inventory reservations, staff ownership, payment observations, fulfillment, delivery, cancellations, refunds, exceptions, recovery, and immutable financial reconciliation. It does not place orders, capture funds, reserve stock, issue refunds, schedule staff, or mark delivery complete by itself.
+
+Apply `backend/migrations/001_governed_ecommerce_fulfillment.sql` separately with a reviewed migration identity. Provision tenant memberships and subject prefixes before issuing tokens. Connector workers for payment, tax, inventory, scheduling, messaging, accounting, delivery, partners, and commerce platforms remain disabled until credentials, signed webhook contracts, idempotency, refund limits, replay protection, reconciliation, and dead-letter drills pass.
+
+Use `.env.example`; production rejects weak secrets, wildcard CORS, demo/mock/provider flags, and startup schema mutation. Install locked dependencies explicitly. `start.sh` supervises existing dependencies and never installs, seeds, migrates, resets data, or reclaims ports. Validate stock races, duplicate orders, payment divergence, cancellation/refund, no-show, partial fulfillment, provider outage, restore, and financial audit export before launch. No real order, payment, refund, reservation, or delivery was executed here.

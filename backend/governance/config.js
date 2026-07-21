@@ -1,0 +1,33 @@
+module.exports={
+  caseType:'reconciled_ecommerce_fulfillment',initialState:'request_registered',
+  states:['request_registered','availability_reconciled','quote_locked','inventory_reserved','order_confirmed','payment_observed','fulfillment_scheduled','fulfillment_in_progress','partial_fulfillment','delivery_observed','cancellation_pending','refund_review','exception_hold','recovery_verified','financial_reconciled','closed'],
+  createRoles:['commerce_agent','operations_manager'],assessmentRoles:['commerce_agent','inventory_reviewer','finance_reviewer','operations_manager'],auditRoles:['finance_reviewer','privacy_officer','auditor','operations_manager'],connectorRoles:['integration_operator','operations_manager'],
+  evidenceKinds:['customer_request_manifest','catalog_snapshot','availability_receipt','pricing_tax_quote','inventory_reservation_receipt','order_receipt','payment_receipt','staff_assignment','schedule_receipt','fulfillment_receipt','delivery_receipt','cancellation_record','refund_approval','accounting_reconciliation','partner_failure','recovery_record','customer_feedback'],
+  requiredSignals:['catalogVersion','inventoryVersion','pricingVersion','taxVersion','paymentVersion','policyVersion','availabilityConfirmed','stockConflictCount','paymentDivergence','priceVariance','refundLimitExceeded','deliveryStatus','webhookStatus','p95LatencyMs'],
+  professionalBoundary:'The workflow records offers and receipts but never silently places orders, captures payment, reserves stock, issues refunds, schedules staff, or marks delivery complete. Financial changes require authorized human review and provider reconciliation.',
+  connectors:[{name:'payment',purpose:'authorization capture refund and dispute receipts'},{name:'tax',purpose:'versioned jurisdiction calculations'},{name:'inventory',purpose:'availability reservation and release receipts'},{name:'scheduling',purpose:'staff and service appointment receipts'},{name:'messaging',purpose:'approved customer notification receipts'},{name:'accounting',purpose:'ledger and settlement reconciliation'},{name:'delivery',purpose:'carrier status and proof-of-delivery receipts'},{name:'partner',purpose:'typed marketplace or service-partner contracts'},{name:'commerce_platform',purpose:'order and cancellation webhooks'}],
+  transitions:[
+    {from:'request_registered',action:'reconcile_availability',to:'availability_reconciled',roles:['commerce_agent','integration_operator'],requiresEvidence:true},
+    {from:'availability_reconciled',action:'lock_quote',to:'quote_locked',roles:['commerce_agent','operations_manager'],requiresEvidence:true},
+    {from:'quote_locked',action:'record_reservation',to:'inventory_reserved',roles:['integration_operator','inventory_reviewer'],requiresEvidence:true},
+    {from:'inventory_reserved',action:'confirm_order',to:'order_confirmed',roles:['operations_manager'],requiresEvidence:true,dualControl:true},
+    {from:'order_confirmed',action:'record_payment_receipt',to:'payment_observed',roles:['integration_operator','finance_reviewer'],requiresEvidence:true},
+    {from:'payment_observed',action:'schedule_fulfillment',to:'fulfillment_scheduled',roles:['operations_manager'],requiresEvidence:true},
+    {from:'fulfillment_scheduled',action:'start_fulfillment',to:'fulfillment_in_progress',roles:['commerce_agent','operations_manager'],requiresEvidence:true},
+    {from:'fulfillment_in_progress',action:'record_partial_fulfillment',to:'partial_fulfillment',roles:['commerce_agent','operations_manager'],requiresEvidence:true},
+    {from:'fulfillment_in_progress',action:'record_delivery',to:'delivery_observed',roles:['integration_operator','operations_manager'],requiresEvidence:true},
+    {from:'partial_fulfillment',action:'record_delivery',to:'delivery_observed',roles:['integration_operator','operations_manager'],requiresEvidence:true},
+    {from:'order_confirmed',action:'request_cancellation',to:'cancellation_pending',roles:['commerce_agent','operations_manager'],requiresEvidence:true},
+    {from:'payment_observed',action:'request_refund',to:'refund_review',roles:['finance_reviewer','operations_manager'],requiresEvidence:true},
+    {from:'cancellation_pending',action:'submit_refund_review',to:'refund_review',roles:['finance_reviewer'],requiresEvidence:true},
+    {from:'refund_review',action:'record_exception',to:'exception_hold',roles:['finance_reviewer','operations_manager'],requiresEvidence:true},
+    {from:'exception_hold',action:'verify_recovery',to:'recovery_verified',roles:['finance_reviewer','operations_manager'],requiresEvidence:true,dualControl:true},
+    {from:'delivery_observed',action:'reconcile_financials',to:'financial_reconciled',roles:['finance_reviewer','operations_manager'],requiresEvidence:true,dualControl:true},
+    {from:'recovery_verified',action:'reconcile_financials',to:'financial_reconciled',roles:['finance_reviewer','operations_manager'],requiresEvidence:true,dualControl:true},
+    {from:'financial_reconciled',action:'close_fulfillment',to:'closed',roles:['operations_manager','auditor'],requiresEvidence:true}
+  ],
+  acceptedFixture:{catalogVersion:'c1',inventoryVersion:'i1',pricingVersion:'pr1',taxVersion:'t1',paymentVersion:'pay1',policyVersion:'p1',availabilityConfirmed:true,stockConflictCount:0,paymentDivergence:false,priceVariance:0,refundLimitExceeded:false,deliveryStatus:'reconciled',webhookStatus:'reconciled',p95LatencyMs:900},
+  rejectedFixture:{catalogVersion:'c1',inventoryVersion:'i1',pricingVersion:'pr1',taxVersion:'t1',paymentVersion:'pay1',policyVersion:'p1',availabilityConfirmed:true,stockConflictCount:1,paymentDivergence:false,priceVariance:0,refundLimitExceeded:false,deliveryStatus:'reconciled',webhookStatus:'reconciled',p95LatencyMs:900},
+  readyDisposition:'independent_fulfillment_review_required',holdDisposition:'commerce_reconciliation_hold',decisionField:'paymentOrFulfillmentCommand',
+  assess:x=>{const conflicts=Number(x.stockConflictCount),variance=Number(x.priceVariance),latency=Number(x.p95LatencyMs);const ready=x.availabilityConfirmed===true&&conflicts===0&&x.paymentDivergence===false&&variance===0&&x.refundLimitExceeded===false&&x.deliveryStatus==='reconciled'&&x.webhookStatus==='reconciled'&&latency<=1500;return{disposition:ready?'independent_fulfillment_review_required':'commerce_reconciliation_hold',paymentOrFulfillmentCommand:null,refundCommand:null,metrics:{conflicts,variance,latency},versions:{catalog:x.catalogVersion,inventory:x.inventoryVersion,pricing:x.pricingVersion,tax:x.taxVersion,payment:x.paymentVersion,policy:x.policyVersion}};}
+};
