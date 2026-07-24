@@ -5,6 +5,7 @@ import governanceRouter from '../governance/router.js';
 import governanceRuntime from '../governance/runtime.js';
 import providerGateModule from '../governance/providerGate.js';
 import authRouter from './routes/authGoverned.js';
+import runtimeAiRouter from './routes/runtimeAi.js';
 
 dotenv.config({path:'../.env'});
 governanceRuntime.validateRuntime();
@@ -17,6 +18,7 @@ app.use((_req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.
 app.use(cors({origin:(origin,callback)=>!origin||origins.includes(origin)?callback(null,true):callback(new Error('Origin not allowed by CORS')),credentials:true}));
 app.use(express.json({limit:'1mb'}));
 app.use('/api/auth',authRouter);
+app.use('/api/runtime-ai',runtimeAiRouter);
 app.use(providerGateModule.createProviderGate(['/api/ai','/api/gap','/api/batch','/api/payment','/api/stripe','/api/recommendations']));
 app.get('/api/health',(_req,res)=>res.json({status:'ok',workflow:'reconciled_ecommerce_fulfillment',timestamp:new Date().toISOString()}));
 app.use('/api/governance',governanceRouter);
