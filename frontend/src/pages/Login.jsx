@@ -32,8 +32,8 @@ export const Login = () => {
       setEmail(credentials.email);
       setPassword(credentials.password);
     } catch (err) {
-      setEmail('admin@ecommerce.ai');
-      setPassword('admin123');
+      setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
+      setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
     }
   };
 

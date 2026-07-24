@@ -26,6 +26,12 @@ import {
   AbandonedCart
 } from '../models/index.js';
 
+function requireDemoPassword() {
+  const password = process.env.DEMO_PASSWORD || process.env.SEED_DEMO_PASSWORD || process.env.DEMO_SEED_PASSWORD || '';
+  if (password.length < 12 || password.length > 1024) throw new Error('DEMO_PASSWORD must contain 12-1024 characters');
+  return password;
+}
+
 async function seed() {
   try {
     console.log('🌱 Starting database seed...');
@@ -36,7 +42,7 @@ async function seed() {
 
     // Seed Users
     console.log('👤 Seeding users...');
-    const hashedPassword = await bcrypt.hash('admin123', 10);
+    const hashedPassword = await bcrypt.hash(requireDemoPassword(), 10);
     await User.bulkCreate([
       { email: 'admin@ecommerce.ai', password: hashedPassword, name: 'Admin User', role: 'admin' },
       { email: 'manager@ecommerce.ai', password: hashedPassword, name: 'Store Manager', role: 'manager' },
@@ -384,21 +390,21 @@ async function seed() {
     // Seed Additional Users with different roles
     console.log('Seeding additional users...');
     await User.bulkCreate([
-      { email: 'manager1@ecommerce.ai', password: await bcrypt.hash('manager123', 10), name: 'Sarah Johnson', role: 'manager' },
-      { email: 'manager2@ecommerce.ai', password: await bcrypt.hash('manager123', 10), name: 'Mike Chen', role: 'manager' },
-      { email: 'user1@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Emily Davis', role: 'user' },
-      { email: 'user2@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'James Wilson', role: 'user' },
-      { email: 'user3@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Lisa Anderson', role: 'user' },
-      { email: 'user4@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Robert Taylor', role: 'user' },
-      { email: 'user5@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Jennifer Martinez', role: 'user' },
-      { email: 'admin2@ecommerce.ai', password: await bcrypt.hash('admin123', 10), name: 'David Brown', role: 'admin' },
-      { email: 'manager3@ecommerce.ai', password: await bcrypt.hash('manager123', 10), name: 'Amanda White', role: 'manager' },
-      { email: 'user6@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Chris Thompson', role: 'user' },
-      { email: 'user7@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Michelle Garcia', role: 'user' },
-      { email: 'manager4@ecommerce.ai', password: await bcrypt.hash('manager123', 10), name: 'Kevin Lee', role: 'manager' },
-      { email: 'user8@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Rachel Moore', role: 'user' },
-      { email: 'user9@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Daniel Jackson', role: 'user' },
-      { email: 'user10@ecommerce.ai', password: await bcrypt.hash('user123', 10), name: 'Stephanie Harris', role: 'user' },
+      { email: 'manager1@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Sarah Johnson', role: 'manager' },
+      { email: 'manager2@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Mike Chen', role: 'manager' },
+      { email: 'user1@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Emily Davis', role: 'user' },
+      { email: 'user2@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'James Wilson', role: 'user' },
+      { email: 'user3@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Lisa Anderson', role: 'user' },
+      { email: 'user4@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Robert Taylor', role: 'user' },
+      { email: 'user5@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Jennifer Martinez', role: 'user' },
+      { email: 'admin2@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'David Brown', role: 'admin' },
+      { email: 'manager3@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Amanda White', role: 'manager' },
+      { email: 'user6@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Chris Thompson', role: 'user' },
+      { email: 'user7@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Michelle Garcia', role: 'user' },
+      { email: 'manager4@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Kevin Lee', role: 'manager' },
+      { email: 'user8@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Rachel Moore', role: 'user' },
+      { email: 'user9@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Daniel Jackson', role: 'user' },
+      { email: 'user10@ecommerce.ai', password: await bcrypt.hash(requireDemoPassword(), 10), name: 'Stephanie Harris', role: 'user' },
     ]);
 
     // Seed Coupons
@@ -540,7 +546,7 @@ async function seed() {
     console.log('   - Abandoned Carts: 16');
     console.log('');
     console.log('🔐 Demo Login Credentials:');
-    console.log('   Admin:   admin@ecommerce.ai / admin123');
+    console.log('Demo login users provisioned from the local environment.');
     console.log('   Manager: manager1@ecommerce.ai / manager123');
     console.log('   User:    user1@ecommerce.ai / user123');
 
