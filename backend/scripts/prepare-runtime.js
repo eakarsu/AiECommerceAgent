@@ -16,6 +16,9 @@ try {
     id BIGSERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), input JSONB NOT NULL,
     result JSONB NOT NULL, model TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await sequelize.query(fs.readFileSync(path.resolve('migrations/002_dropship_growth_os.sql'), 'utf8'));
+  await sequelize.query(fs.readFileSync(path.resolve('migrations/003_growth_connector_jobs.sql'), 'utf8'));
+  await sequelize.query(fs.readFileSync(path.resolve('migrations/004_dropship_operations.sql'), 'utf8'));
   const email = String(process.env.PROVISION_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   const password = String(process.env.PROVISION_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || '');
   if (!email || password.length < 12) throw new Error('Runtime administrator credentials are required');

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { ConciergeApi } from '../services/api';
+import ScenarioButtons from '../components/ScenarioButtons';
 
 export const Concierge = () => {
   const [sessions, setSessions] = useState([]);
@@ -85,6 +86,11 @@ export const Concierge = () => {
                   </div>
                 ))}
               </div>
+              <ScenarioButtons className="mb-3" scenarios={[
+                {label:'Guided Purchase',tone:'standard',values:{draft:'I need a desk lamp under $80 for a small home office. Compare the best options, explain the tradeoffs, and add the strongest value choice to my cart.'}},
+                {label:'Compatibility Risk',tone:'risk',values:{draft:'I need a travel adapter for a 16-inch laptop and phone in the UK and EU. Confirm voltage and plug compatibility before recommending anything, and do not add an item unless the evidence is complete.'}},
+                {label:'Policy Exception',tone:'exception',values:{draft:'My previous order arrived damaged and I need a replacement plus a different color. Check the return policy, preserve the original order context, and explain any approval needed before changing my cart.'}},
+              ]} onApply={values=>setDraft(values.draft)} onClear={()=>setDraft('')} />
               <div className="flex gap-2">
                 <input className="input flex-1" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="Type a message... (try: 'add the desk lamp to my cart')" />
                 <button className="btn btn-primary" onClick={send} disabled={sending}>{sending ? '...' : 'Send'}</button>

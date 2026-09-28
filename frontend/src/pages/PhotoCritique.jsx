@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PhotoCritiqueApi, apiGet } from '../services/api';
+import ScenarioButtons from '../components/ScenarioButtons';
 
 export const PhotoCritique = () => {
   const [items, setItems] = useState([]);
@@ -40,6 +41,11 @@ export const PhotoCritique = () => {
 
       <div className="card p-6 space-y-3">
         <h2 className="text-lg font-semibold">Submit photo for AI critique</h2>
+        <ScenarioButtons disabled={!products.length} scenarios={[
+          {label:'Studio Photo',tone:'standard',values:{productId:products[0]?.id,imageUrl:'https://images.unsplash.com/photo-1523275335684-37898b6baf30'}},
+          {label:'Conversion Risk',tone:'risk',values:{productId:products[1]?.id||products[0]?.id,imageUrl:'https://images.unsplash.com/photo-1560343090-f0409e92791a'}},
+          {label:'Background Exception',tone:'exception',values:{productId:products.at(-1)?.id,imageUrl:'https://images.unsplash.com/photo-1542291026-7eec264c27ff'}},
+        ]} onApply={values=>{setProductId(String(values.productId||''));setImageUrl(values.imageUrl);}} onClear={()=>{setProductId('');setImageUrl('');setLatest(null);}} />
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Product (optional)</label>

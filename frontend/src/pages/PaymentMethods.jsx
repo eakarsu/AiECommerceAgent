@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { Modal } from '../components/Modal';
-import { StripeProvider } from '../components/StripeProvider';
+import { getStripePromise } from '../components/StripeProvider';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
-
-const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
-  : null;
 
 const AddCardForm = ({ onSuccess, onCancel }) => {
   const stripe = useStripe();
@@ -96,6 +91,7 @@ const AddCardForm = ({ onSuccess, onCancel }) => {
 };
 
 export const PaymentMethods = () => {
+  const stripePromise = getStripePromise();
   const [cards, setCards] = useState([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);

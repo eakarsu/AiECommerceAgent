@@ -105,9 +105,13 @@ export default function Batch03Features() {
               onClick={() => applySampleRequest(sample.value)}
               style={{ padding: '6px 10px', background: '#eef2ff', color: '#1e3a8a', border: '1px solid #c7d2fe', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
             >
-              {sample.label}
+              Fill {sample.label}
             </button>
           ))}
+          <button type="button" onClick={() => applySampleRequest('')}
+            style={{ padding: '6px 10px', background: '#fff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+            Clear All Fields
+          </button>
         </div>
 
           <textarea value={input} onChange={e => setInput(e.target.value)}

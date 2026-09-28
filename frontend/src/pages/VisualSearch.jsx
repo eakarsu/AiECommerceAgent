@@ -1,5 +1,12 @@
 import { useState } from 'react';
 import { apiPost } from '../services/api';
+import ScenarioButtons from '../components/ScenarioButtons';
+
+const searchScenarios = [
+  { label:'Standard Product',tone:'standard',values:{imageDescription:'Minimalist matte-black adjustable desk lamp photographed on a white background, warm LED light, modern home-office style',imageUrl:'https://images.unsplash.com/photo-1507473885765-e6ed057f782c',topK:10}},
+  { label:'High-Risk Match',tone:'risk',values:{imageDescription:'Unbranded luxury-style handbag with gold hardware; find visually similar products while flagging possible trademark-sensitive matches',imageUrl:'https://images.unsplash.com/photo-1584917865442-de89df76afd3',topK:20}},
+  { label:'Poor Image Exception',tone:'exception',values:{imageDescription:'Low-light, partially cropped mobile photo of a small blue kitchen appliance with no visible brand or model number',imageUrl:'https://images.unsplash.com/photo-1570222094114-d054a817e56b',topK:5}},
+];
 
 export default function VisualSearch() {
   const [imageDescription, setImageDescription] = useState('');
@@ -35,6 +42,7 @@ export default function VisualSearch() {
           Stub mode: deterministic in-memory embedding (no pgvector / CLIP). Production should swap in OpenAI/Cohere embeddings.
         </p>
         <form onSubmit={run} className="space-y-3">
+          <ScenarioButtons scenarios={searchScenarios} onApply={values=>{setImageDescription(values.imageDescription);setImageUrl(values.imageUrl);setTopK(values.topK);}} onClear={()=>{setImageDescription('');setImageUrl('');setTopK('');setResult(null);setError('');}} />
           <div>
             <label className="block text-sm font-medium mb-1">Image description</label>
             <textarea className="input" rows={2} value={imageDescription} onChange={e => setImageDescription(e.target.value)} placeholder="Describe the image you'd like to match..." />

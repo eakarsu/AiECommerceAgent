@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { InventoryReorderApi, apiGet } from '../services/api';
+import ScenarioButtons from '../components/ScenarioButtons';
 
 export const InventoryReorder = () => {
   const [items, setItems] = useState([]);
@@ -54,6 +55,11 @@ export const InventoryReorder = () => {
 
       <div className="card p-6 space-y-3">
         <h2 className="text-lg font-semibold">Run Prediction</h2>
+        <ScenarioButtons disabled={!products.length} scenarios={[
+          {label:'Standard Replenishment',tone:'standard',values:{productId:products[0]?.id,leadTime:14}},
+          {label:'Long Lead-Time Risk',tone:'risk',values:{productId:products[1]?.id||products[0]?.id,leadTime:45}},
+          {label:'Urgent Stockout',tone:'exception',values:{productId:products.at(-1)?.id,leadTime:3}},
+        ]} onApply={values=>{setProductId(String(values.productId||''));setLeadTime(values.leadTime);}} onClear={()=>{setProductId('');setLeadTime('');}} />
         <div className="flex gap-3 items-end">
           <div className="flex-1">
             <label className="block text-sm font-medium mb-1">Product</label>

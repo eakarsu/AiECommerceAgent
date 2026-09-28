@@ -115,8 +115,7 @@ export const Login = () => {
               onClick={handleDemoLogin}
               className="w-full btn btn-secondary py-3 justify-center bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200"
             >
-              <span className="text-lg mr-2">✨</span>
-              Fill Demo Credentials
+              Auto Fill Demo Credentials
             </button>
           </div>
 

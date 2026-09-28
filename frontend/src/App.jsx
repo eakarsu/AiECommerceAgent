@@ -45,6 +45,9 @@ import AffiliateReferrals from './pages/AffiliateReferrals';
 import Batch03Features from './pages/Batch03Features';
 import CustomViewsPage from './pages/CustomViewsPage';
 import ReturnRiskExchangeOptimizer from './pages/ReturnRiskExchangeOptimizer';
+import GrowthOS from './pages/GrowthOS';
+import GrowthConnectors from './pages/GrowthConnectors';
+import DropshipOperations from './pages/DropshipOperations';
 
 import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
 import CodexOperationsFeature from './pages/CodexOperationsFeature';
@@ -80,7 +83,7 @@ function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <ErrorBoundary>
             <Routes>
         <Route path="/codex/custom-viz" element={<ProtectedRoute><CodexCustomVizFeature /></ProtectedRoute>} />
@@ -91,6 +94,13 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/growth-os" element={<ProtectedRoute><GrowthOS initialSection="pipeline" /></ProtectedRoute>} />
+              <Route path="/growth-os/validation" element={<ProtectedRoute><GrowthOS initialSection="validation" /></ProtectedRoute>} />
+              <Route path="/growth-os/suppliers" element={<ProtectedRoute><GrowthOS initialSection="suppliers" /></ProtectedRoute>} />
+              <Route path="/growth-os/creative" element={<ProtectedRoute><GrowthOS initialSection="creative" /></ProtectedRoute>} />
+              <Route path="/growth-os/testing" element={<ProtectedRoute><GrowthOS initialSection="testing" /></ProtectedRoute>} />
+              <Route path="/growth-os/connectors" element={<ProtectedRoute><GrowthConnectors /></ProtectedRoute>} />
+              <Route path="/dropship-operations" element={<ProtectedRoute><DropshipOperations /></ProtectedRoute>} />
               <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
               <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
               <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />

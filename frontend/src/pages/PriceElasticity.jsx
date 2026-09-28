@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PriceElasticityApi, apiGet } from '../services/api';
+import ScenarioButtons from '../components/ScenarioButtons';
 
 export const PriceElasticity = () => {
   const [tests, setTests] = useState([]);
@@ -40,6 +41,11 @@ export const PriceElasticity = () => {
 
       <div className="card p-6">
         <h2 className="text-lg font-semibold mb-3">Start Test (AI proposes 2 variants)</h2>
+        <ScenarioButtons className="mb-4" disabled={!products.length} scenarios={[
+          {label:'Core Product',tone:'standard',values:{productId:products[0]?.id}},
+          {label:'Margin Pressure',tone:'risk',values:{productId:products[1]?.id||products[0]?.id}},
+          {label:'Low-Volume Exception',tone:'exception',values:{productId:products.at(-1)?.id}},
+        ]} onApply={values=>setProductId(String(values.productId||''))} onClear={()=>setProductId('')} />
         <div className="flex gap-3 items-end">
           <div className="flex-1">
             <label className="block text-sm font-medium mb-1">Product</label>

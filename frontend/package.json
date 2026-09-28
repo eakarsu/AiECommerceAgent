@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:ai-scenarios": "node scripts/verify-ai-scenario-coverage.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^2.9.0",

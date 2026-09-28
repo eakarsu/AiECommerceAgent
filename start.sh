@@ -82,6 +82,6 @@ require_dir "$PROJECT_DIR/frontend/node_modules"
 port_free "$FRONTEND_PORT"
 (cd "$PROJECT_DIR/backend" && node scripts/prepare-runtime.js)
 (cd "$PROJECT_DIR/backend" && BACKEND_PORT="$BACKEND_PORT" PORT="$BACKEND_PORT" npm start) & CHILD_PIDS+=("$!")
-(cd "$PROJECT_DIR/frontend" && VITE_BACKEND_PORT="$BACKEND_PORT" npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort) & CHILD_PIDS+=("$!")
-echo "Governed commerce services started without installing, seeding, migrating, or reclaiming ports."
+(cd "$PROJECT_DIR/frontend" && VITE_BACKEND_PORT="$BACKEND_PORT" npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort) & CHILD_PIDS+=("$!")
+echo "Governed commerce services started after idempotent schema preparation; no packages were installed and no occupied ports were terminated."
 wait "${CHILD_PIDS[@]}"

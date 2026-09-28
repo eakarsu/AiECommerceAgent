@@ -1,12 +1,19 @@
 import { Elements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe } from '@stripe/stripe-js/pure';
 
-const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
-  : null;
+let stripePromise;
+
+export const getStripePromise = () => {
+  const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  if (!publishableKey) return null;
+  if (!stripePromise) stripePromise = loadStripe(publishableKey);
+  return stripePromise;
+};
 
 export const StripeProvider = ({ children, clientSecret }) => {
-  if (!stripePromise) {
+  const stripe = getStripePromise();
+
+  if (!stripe) {
     return (
       <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
         <p className="text-sm text-yellow-800">
@@ -19,7 +26,7 @@ export const StripeProvider = ({ children, clientSecret }) => {
   const options = clientSecret ? { clientSecret } : {};
 
   return (
-    <Elements stripe={stripePromise} options={options}>
+    <Elements stripe={stripe} options={options}>
       {children}
     </Elements>
   );

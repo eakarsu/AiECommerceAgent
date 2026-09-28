@@ -5,6 +5,13 @@ import { NotificationCenter } from './NotificationCenter';
 
 const menuItems = [
   { path: '/dashboard', name: 'Dashboard', icon: '📊' },
+  { path: '/growth-os', name: 'Dropship Growth OS', icon: '🚀' },
+  { path: '/growth-os/validation', name: 'Product Validation', icon: '🔎' },
+  { path: '/growth-os/suppliers', name: 'Supplier Economics', icon: '🏭' },
+  { path: '/growth-os/creative', name: 'AI UGC Studio', icon: '🎬' },
+  { path: '/growth-os/testing', name: 'Test & Scale', icon: '📐' },
+  { path: '/growth-os/connectors', name: 'Live Connectors', icon: '🔌' },
+  { path: '/dropship-operations', name: 'Dropship Operations', icon: '🚚' },
   { path: '/products', name: 'Products', icon: '📦' },
   { path: '/pricing', name: 'Dynamic Pricing', icon: '💰' },
   { path: '/campaigns', name: 'Ad Campaigns', icon: '📢' },
@@ -156,7 +163,7 @@ export const Layout = ({ children }) => {
               </svg>
             </button>
             <h2 className="text-lg lg:text-xl font-semibold text-gray-800">
-              {menuItems.find(item => item.path === location.pathname)?.name || location.pathname === '/profile' ? 'Profile' : 'Dashboard'}
+              {location.pathname === '/profile' ? 'Profile' : (menuItems.find(item => item.path === location.pathname)?.name || 'Dashboard')}
             </h2>
           </div>
           <div className="flex items-center gap-4">
