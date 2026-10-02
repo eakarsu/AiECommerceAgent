@@ -30,7 +30,8 @@ export const Login = () => {
       const res = await fetch('/api/auth/demo-credentials');
       const credentials = await res.json();
       setEmail(credentials.email);
-      setPassword(credentials.password);
+      setPassword(credentials.password)
+      window.setTimeout(() => { const __f = document.querySelector('form'); if (__f) __f.requestSubmit(); }, 60);;
     } catch (err) {
       setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
       setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
