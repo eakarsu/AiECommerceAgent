@@ -4,6 +4,26 @@ import sequelize from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
+
+router.get('/commerce-advice', authenticateToken, async (req, res) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50) : 20;
+    const results = await sequelize.query(
+      `SELECT id,input,result,model,created_at
+       FROM ecommerce_runtime_ai_results
+       WHERE user_id=$1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      { bind: [req.user.id, limit], type: QueryTypes.SELECT },
+    );
+    return res.json({ results });
+  } catch (error) {
+    console.error('Runtime AI history error:', error.message);
+    return res.status(500).json({ error: 'saved_results_unavailable' });
+  }
+});
+
 router.post('/commerce-advice', authenticateToken, async (req, res) => {
   try {
     if (!req.body || typeof req.body !== 'object' || !Object.keys(req.body).length) return res.status(400).json({ error: 'commerce_context_required' });

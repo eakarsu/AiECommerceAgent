@@ -1,3 +1,4 @@
+import NativeAIReadiness from './pages/NativeAIReadiness';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -92,7 +93,8 @@ function App() {
           <Route path="/batch03" element={<Batch03Features />} />
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/ai-workspace" element={<ProtectedRoute><NativeAIReadiness /></ProtectedRoute>} />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/growth-os" element={<ProtectedRoute><GrowthOS initialSection="pipeline" /></ProtectedRoute>} />
               <Route path="/growth-os/validation" element={<ProtectedRoute><GrowthOS initialSection="validation" /></ProtectedRoute>} />

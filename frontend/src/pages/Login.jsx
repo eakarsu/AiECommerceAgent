@@ -26,15 +26,22 @@ export const Login = () => {
   };
 
   const handleDemoLogin = async () => {
+    if (loading) return;
+    setError('');
+    setLoading(true);
     try {
       const res = await fetch('/api/auth/demo-credentials');
+      if (!res.ok) throw new Error('Demo credentials are unavailable.');
       const credentials = await res.json();
+      if (!credentials.email || !credentials.password) throw new Error('Demo credentials are unavailable.');
       setEmail(credentials.email);
-      setPassword(credentials.password)
-
+      setPassword(credentials.password);
+      await login(credentials.email, credentials.password);
+      navigate('/dashboard');
     } catch (err) {
-      setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
-      setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
+      setError(err.message || 'Demo login failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -112,11 +119,12 @@ export const Login = () => {
               Want to try it out? Use demo credentials
             </p>
             <button
+              disabled={loading}
               type="button"
               onClick={handleDemoLogin}
               className="w-full btn btn-secondary py-3 justify-center bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200"
             >
-              Auto Fill Demo Credentials
+              {loading ? 'Logging in…' : 'Log In as Demo'}
             </button>
           </div>
 

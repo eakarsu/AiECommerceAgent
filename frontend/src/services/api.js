@@ -36,8 +36,9 @@ export async function apiGet(path, query) {
   return handleResponse(res);
 }
 
-export async function apiPost(path, body) {
+export async function apiPost(path, body, nativeRequestOptions = {}) {
   const res = await fetch(BASE + path, {
+    ...nativeRequestOptions,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,

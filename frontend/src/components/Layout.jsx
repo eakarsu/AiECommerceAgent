@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { NotificationCenter } from './NotificationCenter';
 
 const menuItems = [
+  { path: '/ai-workspace', name: 'AI workspace', icon: '🤖' },
   { path: '/dashboard', name: 'Dashboard', icon: '📊' },
   { path: '/growth-os', name: 'Dropship Growth OS', icon: '🚀' },
   { path: '/growth-os/validation', name: 'Product Validation', icon: '🔎' },
